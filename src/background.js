@@ -1,22 +1,23 @@
+if (typeof importScripts === 'function') {
+  importScripts(
+    'lib/state.js',
+    'adapters/registry.js',
+    'adapters/ebay.js',
+    'adapters/facebook.js',
+    'adapters/craigslist.js'
+  );
+}
+
 const DEFAULT_FILTERS = {
   distanceScope: 'any',
   sameLocationValue: '',
-  brandRequired: false,
-  brand: '',
-  freeShippingOnly: false,
   minPositiveRatings: 5,
   maxNegativeRatioDivisor: 5,
-  sellerStandingBoost: true,
-  userState: '',
-  defaultTaxRate: 0,
-  couponOptIn: false,
+  ...(globalThis.MarketMatchLib?.DEFAULT_FILTERS || {}),
 };
 
 const DEFAULT_CONSENT = {
-  cookiesPrompted: false,
-  cookiesAllowed: false,
-  historyAllowed: false,
-  couponLookupAllowed: false,
+  ...(globalThis.MarketMatchLib?.DEFAULT_CONSENT || {}),
 };
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -66,6 +67,17 @@ function detectPlatform(url) {
 }
 
 function buildSearchTargets(query) {
+  const adapters = globalThis.MarketMatchAdapters;
+  if (adapters?.listPlatforms) {
+    return adapters.listPlatforms().reduce((targets, platform) => {
+      const adapter = adapters.getAdapter(platform);
+      if (adapter?.buildSearchUrl) {
+        targets[platform] = adapter.buildSearchUrl(query);
+      }
+      return targets;
+    }, {});
+  }
+
   const encoded = encodeURIComponent(query);
   return {
     ebay: `https://www.ebay.com/sch/i.html?_nkw=${encoded}`,

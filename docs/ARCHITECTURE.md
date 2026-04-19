@@ -23,5 +23,6 @@ Keep scraping concerns, normalization, ranking, persistence, and UI separate so 
 ## Current Runtime Wiring
 - `manifest.json` loads `src/adapters/registry.js`, then each platform adapter, then `src/content.js` for supported marketplace pages.
 - `src/content.js` now dispatches capture/result collection through the registered adapter for the active hostname.
+- `src/background.js` now loads the same adapter/state scripts so search-target building and default state come from shared runtime layers.
 - `src/popup.html` now loads shared normalize/filter/history/ranking helpers before `src/popup.js` so the popup uses the same query and ranking logic.
 - Adapters still return placeholder payloads, but the runtime shape now matches the documented layering.
