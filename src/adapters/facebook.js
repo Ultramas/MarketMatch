@@ -69,7 +69,9 @@
         ['meta[property="og:title"]', 'content'],
         ['meta[name="twitter:title"]', 'content'],
         ['h1'],
+        ['h1 span'],
         ['[role="main"] h1'],
+        ['[role="main"] h1 span'],
         ['[data-testid="marketplace_pdp_title"]'],
       ]),
       ...collectTextCandidates(root, 'h1, h2, [role="heading"], strong', 16),
@@ -84,15 +86,28 @@
     const labeledDescription = extractInlineLabeledValue(root, /seller'?s description|description/i);
     if (isUsefulDescription(labeledDescription)) return labeledDescription;
 
-    const candidates = collectCandidates([
+    const explicitCandidates = collectCandidates([
       ...selectorsToCandidates(doc, [
         ['meta[property="og:description"]', 'content'],
         ['meta[name="description"]', 'content'],
+        ['[data-testid="marketplace_pdp_description"]'],
+        ['[role="main"] [data-testid*="description"]'],
       ]),
       ...collectLabeledTextCandidates(root, [/description/i], 6),
-      ...collectTextCandidates(root, '[role="main"] div, [role="main"] span, div[data-testid], span[data-testid]', 120),
-      ...collectTextCandidates(root, 'div, span', 220),
-    ]).filter(isUsefulDescription);
+    ])
+      .flatMap(expandDescriptionCandidates)
+      .filter(isUsefulDescription);
+
+    const fallbackCandidates = collectCandidates([
+      ...collectStructuredTextCandidates(root, '[role="main"] p, [role="main"] div, [role="main"] span, div[data-testid], span[data-testid]', 140),
+      ...collectStructuredTextCandidates(root, 'p, div, span', 220),
+    ])
+      .filter(isUsefulDescription);
+
+    const candidates = collectCandidates([
+      ...explicitCandidates,
+      ...fallbackCandidates,
+    ]);
 
     return pickBestCandidate(candidates, scoreDescriptionCandidate) || '';
   }
@@ -145,6 +160,7 @@
   function extractLocationText(root) {
     const candidates = collectCandidates([
       ...collectLabeledTextCandidates(root, [/location/i, /pickup/i, /ships to you/i], 8),
+      ...collectStructuredTextCandidates(root, '[role="main"] span, [role="main"] div', 180),
       ...collectTextCandidates(root, 'span, div', 160),
     ])
       .map(extractLocationFragment)
@@ -205,8 +221,15 @@
       const stripped = cleanText(text.replace(pattern, ''));
       if (isUsefulDescription(stripped)) return stripped;
 
-      const nextText = cleanText(node.nextElementSibling?.textContent);
-      if (isUsefulDescription(nextText)) return nextText;
+      const nearby = [
+        cleanText(node.firstElementChild?.textContent),
+        cleanText(node.nextElementSibling?.textContent),
+        cleanText(node.nextElementSibling?.nextElementSibling?.textContent),
+      ];
+
+      for (const candidate of nearby) {
+        if (isUsefulDescription(candidate)) return candidate;
+      }
     }
 
     return '';
@@ -240,6 +263,14 @@
       .filter(Boolean);
   }
 
+  function collectStructuredTextCandidates(root, selector, limit = 60) {
+    return Array.from((root || document.body).querySelectorAll(selector))
+      .slice(0, limit)
+      .filter((node) => !nodeLooksTooBroad(node))
+      .map((node) => cleanText(node.textContent))
+      .filter(Boolean);
+  }
+
   function collectLabeledTextCandidates(root, labelPatterns, limit = 10) {
     const nodes = Array.from((root || document.body).querySelectorAll('div, span, strong, h2, h3, a')).slice(0, 220);
     const candidates = [];
@@ -253,7 +284,8 @@
 
       const nearby = [
         cleanText(node.nextElementSibling?.textContent),
-        cleanText(node.parentElement?.textContent),
+        cleanText(node.nextElementSibling?.nextElementSibling?.textContent),
+        cleanText(node.parentElement?.nextElementSibling?.textContent),
       ].filter(Boolean);
 
       candidates.push(...nearby);
@@ -265,6 +297,40 @@
 
   function collectCandidates(values) {
     return [...new Set((values || []).map(cleanText).filter(Boolean))];
+  }
+
+  function expandDescriptionCandidates(value) {
+    const text = cleanText(value);
+    if (!text) return [];
+
+    const expanded = [text];
+    const labelMatch = text.match(/(?:seller'?s description|description)\b[:\-]?\s*(.+)$/i);
+    if (labelMatch?.[1]) {
+      expanded.push(cleanText(labelMatch[1]));
+    }
+
+    const sentenceChunks = text
+      .split(/(?<=[.!?])\s+(?=[A-Z0-9])|\s{2,}|\s+[·•|]\s+/)
+      .map(cleanText)
+      .filter((chunk) => chunk.length >= 20);
+
+    for (let index = 0; index < sentenceChunks.length; index += 1) {
+      expanded.push(sentenceChunks[index]);
+      if (sentenceChunks[index + 1]) {
+        expanded.push(cleanText(`${sentenceChunks[index]} ${sentenceChunks[index + 1]}`));
+      }
+    }
+
+    return expanded;
+  }
+
+  function nodeLooksTooBroad(node) {
+    if (!node) return true;
+    const text = cleanText(node.textContent);
+    if (!text) return true;
+    if (text.length > 900) return true;
+    if (node.children.length >= 8 && text.length > 220) return true;
+    return false;
   }
 
   function pickBestCandidate(candidates, scorer) {
@@ -294,11 +360,16 @@
   function scoreDescriptionCandidate(value) {
     let score = 0;
     if (value.length >= 30 && value.length <= 900) score += 18;
+    if (value.length >= 80) score += 6;
+    if (value.length < 60) score -= 4;
+    if (/[.!?]/.test(value)) score += 4;
     if (/\$\s?\d/.test(value)) score += 4;
     if (/condition|pickup|shipping|firm|obo|offer/i.test(value)) score += 4;
     if (/seller'?s description|description/i.test(value)) score += 10;
     if (/facebook|marketplace|log in|share|send seller a message|see less|see more/i.test(value)) score -= 24;
     if (/listed\s+\d+\s+(weeks?|days?|hours?)\s+ago/i.test(value)) score -= 10;
+    if (/hide this listing|save this item|message seller|seller details|availability|create new listing/i.test(value)) score -= 22;
+    if (/deposit|down payment|financing|per month/i.test(value)) score -= 16;
     if (/today'?s picks/i.test(value)) score -= 40;
     if ((value.match(/(?:[A-Z]{1,3}\s*)?\$\s?\d/g) || []).length > 2) score -= 30;
     return score;
@@ -316,7 +387,7 @@
     const value = cleanText(text);
     if (!value) return '';
 
-    const match = value.match(/(ships to you|local pickup|\d+\s+miles away|[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*,\s?[A-Z]{2}|[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*,\s?[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*)/);
+    const match = value.match(/(\d+\s+miles away|[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*,\s?[A-Z]{2}|[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*,\s?[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*|ships to you|local pickup)/);
     return match ? cleanText(match[1]) : '';
   }
 
@@ -329,10 +400,10 @@
 
   function scoreLocationCandidate(value) {
     let score = 0;
-    if (/ships to you|local pickup/i.test(value)) score += 12;
-    if (/miles away/i.test(value)) score += 8;
-    if (/,[A-Z]{2}\b/.test(value)) score += 10;
-    if (/,[A-Z][a-z]+/.test(value)) score += 8;
+    if (/,[A-Z]{2}\b/.test(value)) score += 16;
+    if (/,[A-Z][a-z]+/.test(value)) score += 12;
+    if (/miles away/i.test(value)) score += 10;
+    if (/ships to you|local pickup/i.test(value)) score += 4;
     return score;
   }
 
@@ -342,7 +413,8 @@
     if (value.length < 30 || value.length > 1200) return false;
     if (/^\$\d/.test(value)) return false;
     if (/today'?s picks/i.test(value)) return false;
-    if (/facebook|marketplace|messenger|log in|see more|see less|send seller a message|share|save/i.test(value)) return false;
+    if (/facebook|marketplace|messenger|log in|see more|see less|send seller a message|share|save|hide this listing|message seller|seller details|availability/i.test(value)) return false;
+    if (/listed\s+\d+\s+(minutes?|hours?|days?|weeks?)\s+ago/i.test(value)) return false;
     return true;
   }
 
