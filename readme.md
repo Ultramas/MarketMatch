@@ -2,7 +2,7 @@
 
 Firefox-first browser extension for capturing a Facebook Marketplace listing and comparing it against eBay Browse API matches with no backend service.
 
-## What This Skeleton Covers
+## What The Current Build Covers
 - Manifest V3 extension structure
 - Facebook source capture heuristics in the content script adapter layer
 - Frontend-only eBay Browse API request flow through the extension background worker
@@ -10,8 +10,11 @@ Firefox-first browser extension for capturing a Facebook Marketplace listing and
 - Options page for storing eBay API token/config and comparison defaults
 - First-run consent prompt for cookies/history logging
 - Persistent user inputs and preferences across sessions
-- Search/view history skeleton gated behind user consent
+- Search/view history gated behind user consent
 - Shared normalization/filter/ranking helpers used by the popup runtime
+- Top-match enrichment via eBay Browse `getItem`
+- Lightweight confidence scoring and matched-token hints in popup ranking
+- Hardened Facebook Marketplace capture heuristics for title, description, price, seller, and location extraction
 - Implementation plan in `docs/IMPLEMENTATION_PLAN.md`
 
 ## Core Product Goal
@@ -25,7 +28,7 @@ Firefox-first browser extension for capturing a Facebook Marketplace listing and
 - Save form inputs, filters, and preferences across sessions.
 - Ask for cookie/history consent on first use before logging searches or viewed listings.
 
-## Supported Rules To Implement
+## Supported Rules
 - Distance filters: same city, same state, same country, or any.
 - Seller standing filters.
 - Optional brand match.
@@ -48,9 +51,12 @@ docs/
   IMPLEMENTATION_PLAN.md
 src/
   adapters/
-    registry.js
+    craigslist.js
+    ebay.js
     facebook.js
+    registry.js
   lib/
+    coupons.js
     ebay-api.js
     filters.js
     history.js
@@ -67,11 +73,13 @@ src/
 manifest.json
 ```
 
-## How The Final Extension Should Work
+`src/adapters/ebay.js`, `src/adapters/craigslist.js`, and `src/lib/coupons.js` are present as future-facing stubs, but the active product flow is Facebook capture -> eBay Browse comparison.
+
+## Current Runtime Flow
 1. User opens a Facebook Marketplace listing.
 2. On first use, the extension asks whether cookies/history logging are allowed.
 3. User clicks the extension and presses `Capture Facebook Listing`.
-4. The content script extracts title, description, price, seller info, condition, and location from Facebook using DOM/meta heuristics.
+4. The content script extracts title, description, price, seller info, condition, and location from Facebook using metadata, scoped Marketplace selectors, and conservative text fallbacks.
 5. The extension refuses to continue unless both title and description are present.
 6. The popup builds a normalized query from the Facebook source listing.
 7. The background worker calls eBay Browse API with the saved application token.
@@ -103,9 +111,9 @@ That approach is safer for extension UX and easier to reason about than hidden b
 - eBay buying options / seller feedback
 
 ## Notes
-- Facebook Marketplace extraction now prefers main-content and metadata heuristics before broad text fallbacks, but it will still need selector maintenance as Facebook changes markup.
+- Facebook Marketplace extraction now prefers metadata and scoped Marketplace text before broad fallbacks, and records capture notes when title, description, price, seller, or location cannot be found automatically.
 - eBay Browse API requires an OAuth application token, but token minting is intentionally left outside the extension because embedding client-secret-based auth in frontend code is unsafe.
-- This scaffold stores popup inputs, preferences, consent state, and eBay token/config in extension storage.
+- The extension stores popup inputs, preferences, consent state, and eBay token/config in extension storage.
 - Tax calculation should use two modes: parsed from page when available, otherwise estimated from a default rate or a state-based rate when the user provides a state.
 - Current popup filtering is active for free shipping, seller-threshold heuristics, brand-required matching, and basic location matching from captured Facebook/eBay location strings.
 - After search, the extension enriches the top eBay matches with Browse `getItem` details for better shipping/condition/seller signals.
@@ -113,11 +121,19 @@ That approach is safer for extension UX and easier to reason about than hidden b
 - Popup ranking now includes lightweight match-confidence scoring and matched-token hints.
 - Popup match cards now show clearer price/shipping/confidence metrics plus direct eBay listing/search links.
 
+## Facebook Capture Heuristics
+- Title capture prefers Open Graph and heading signals, then scores short Marketplace-style heading candidates.
+- Description capture prefers metadata and nearby description-labeled blocks before wider text fallback.
+- Price capture prefers explicit price metadata or nearby price-labeled content before general text scanning.
+- Seller capture prefers Marketplace profile links and labeled seller text, with extra filtering for UI boilerplate.
+- Location capture prefers explicit location/pickup/shipping text and conservative locality-shaped matches.
+- If capture is partial, the popup shows capture notes so the user can manually fill gaps before searching eBay.
+
 ## Next Build Steps
-1. Tune Facebook listing extraction selectors against more real Facebook Marketplace page variants.
+1. Keep tuning Facebook listing extraction selectors against more real Facebook Marketplace page variants and login-wall/public-page differences.
 2. Expand eBay Browse API request filters and item-detail enrichment.
 3. Add Firefox-targeted testing and manifest validation.
-4. Refine the popup comparison cards with clearer scoring/breakdown rows.
+4. Decide whether unused adapters/coupon scaffolds should be implemented or removed.
 
 ## Chosen Defaults
 - Prioritize Firefox first.

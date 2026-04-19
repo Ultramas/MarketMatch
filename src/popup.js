@@ -82,7 +82,17 @@ async function captureCurrentListing() {
   }
 
   if (!response?.title || !response?.description) {
-    render({ error: 'Facebook capture did not find both title and description. Selector tuning is still needed for some page layouts.' });
+    render({
+      error: 'Facebook capture did not find both title and description. Fill missing fields manually or try another Marketplace page variant.',
+      notes: Array.isArray(response?.notes) ? response.notes : [],
+      captured: {
+        title: response?.title || '',
+        description: response?.description || '',
+        listedPrice: response?.listedPrice ?? null,
+        locationText: response?.locationText || '',
+        sellerName: response?.sellerName || '',
+      },
+    });
     return;
   }
 
