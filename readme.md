@@ -109,13 +109,14 @@ That approach is safer for extension UX and easier to reason about than hidden b
 - Tax calculation should use two modes: parsed from page when available, otherwise estimated from a default rate or a state-based rate when the user provides a state.
 - Current popup filtering is active for free shipping, seller-threshold heuristics, brand-required matching, and basic location matching from captured Facebook/eBay location strings.
 - After search, the extension enriches the top eBay matches with Browse `getItem` details for better shipping/condition/seller signals.
+- Query construction now strips noisy Facebook sales words and emphasizes stronger product/model tokens before calling eBay.
+- Popup ranking now includes lightweight match-confidence scoring and matched-token hints.
 
 ## Next Build Steps
 1. Tune Facebook listing extraction selectors against more real Facebook Marketplace page variants.
-2. Add smarter query normalization for model/variant-heavy titles.
-3. Expand eBay Browse API request filters and item-detail enrichment.
-4. Add Firefox-targeted testing and manifest validation.
-5. Refine the popup comparison cards with clearer scoring/breakdown rows.
+2. Expand eBay Browse API request filters and item-detail enrichment.
+3. Add Firefox-targeted testing and manifest validation.
+4. Refine the popup comparison cards with clearer scoring/breakdown rows.
 
 ## Chosen Defaults
 - Prioritize Firefox first.

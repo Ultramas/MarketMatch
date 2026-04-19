@@ -264,6 +264,7 @@ function renderResultsSummary(results = []) {
             <strong>$${Number(result.totalCost || 0).toFixed(2)}</strong>
           </div>
         </div>
+        <div class="miniMeta">Confidence ${Number(result.matchConfidence || 0).toFixed(0)}${result.matchedTokens?.length ? ` · ${escapeHtml(result.matchedTokens.join(', '))}` : ''}</div>
         <div class="miniMeta">Item $${Number(result.listedPrice || 0).toFixed(2)} · Shipping ${formatCurrencyOrUnknown(result.shipping)} · Tax $${Number(result.taxes || 0).toFixed(2)}</div>
         <div class="miniMeta">Seller ${escapeHtml(result.sellerName || 'unknown')} ${result.sellerStanding ? `· ${escapeHtml(result.sellerStanding)}` : ''}</div>
         <div class="miniMeta">${escapeHtml(result.locationText || 'Location unavailable')}${Array.isArray(result.buyingOptions) && result.buyingOptions.length ? ` · ${escapeHtml(result.buyingOptions.join(', '))}` : ''}</div>
@@ -351,13 +352,13 @@ function restoreFilters(filters = {}, settings = {}) {
 }
 
 function buildDraftQuery() {
-  const buildQuery = globalThis.MarketMatchLib?.buildQuery;
-  if (typeof buildQuery === 'function') {
-    return buildQuery({
+  const normalizeSearchInput = globalThis.MarketMatchLib?.normalizeSearchInput;
+  if (typeof normalizeSearchInput === 'function') {
+    return normalizeSearchInput({
       brand: brandInput.value.trim(),
       title: titleInput.value.trim(),
       description: descriptionInput.value.trim(),
-    });
+    }).query;
   }
 
   return [brandInput.value.trim(), titleInput.value.trim(), descriptionInput.value.trim()]
@@ -374,6 +375,7 @@ function rankResultsForDisplay(results) {
   return rankResults(results, {
     sellerStandingBoost: sellerStandingBoostInput.checked,
     defaultTaxRate: Number(currentSettings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate ?? 0),
+    sourceListing: readCurrentSourceListing(),
   });
 }
 

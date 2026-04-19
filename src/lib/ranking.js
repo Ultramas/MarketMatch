@@ -3,6 +3,9 @@
 
   lib.buildComparableResult = function buildComparableResult(result, options = {}) {
     const effectivePrice = Number(result.descriptionPriceHint || result.listedPrice || 0);
+    const confidence = typeof lib.computeMatchConfidence === 'function'
+      ? lib.computeMatchConfidence(options.sourceListing || {}, result)
+      : { score: 0, matchedTokens: [] };
     const taxes = lib.computeTaxEstimate({
       listedTax: result.taxes,
       effectivePrice,
@@ -17,8 +20,10 @@
       effectivePrice,
       taxes,
       totalCost,
+      matchConfidence: confidence.score,
+      matchedTokens: confidence.matchedTokens,
       rankingBoost,
-      adjustedRankScore: totalCost - rankingBoost,
+      adjustedRankScore: totalCost - rankingBoost - (confidence.score * 0.12),
     };
   };
 
