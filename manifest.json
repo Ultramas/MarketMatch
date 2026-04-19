@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Marketplace Comparison Assistant",
   "version": "0.1.0",
-  "description": "Skeleton for comparing eBay, Facebook Marketplace, and Craigslist listings with manual capture controls.",
+  "description": "Frontend-only Firefox extension for capturing Facebook Marketplace listings and comparing them against eBay Browse API matches.",
   "browser_specific_settings": {
     "gecko": {
       "id": "marketplace-comparer@example.local",
@@ -16,9 +16,8 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://*.ebay.com/*",
     "https://*.facebook.com/*",
-    "https://*.craigslist.org/*"
+    "https://api.ebay.com/*"
   ],
   "background": {
     "service_worker": "src/background.js"
@@ -31,15 +30,11 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.ebay.com/*",
-        "https://*.facebook.com/*",
-        "https://*.craigslist.org/*"
+        "https://*.facebook.com/*"
       ],
       "js": [
         "src/adapters/registry.js",
-        "src/adapters/ebay.js",
         "src/adapters/facebook.js",
-        "src/adapters/craigslist.js",
         "src/content.js"
       ],
       "run_at": "document_idle"

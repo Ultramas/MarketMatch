@@ -5,75 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Extension Options</title>
     <style>
-      body {
-        font-family: Inter, Arial, sans-serif;
-        margin: 0;
-        background: #0f172a;
-        color: #e5eefc;
-      }
-
-      .wrap {
-        max-width: 720px;
-        margin: 0 auto;
-        padding: 32px 20px;
-        display: grid;
-        gap: 16px;
-      }
-
-      .card {
-        background: #111827;
-        border: 1px solid rgba(148, 163, 184, 0.16);
-        border-radius: 14px;
-        padding: 16px;
-        display: grid;
-        gap: 12px;
-      }
-
-      label {
-        display: grid;
-        gap: 6px;
-      }
-
-      input,
-      button {
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid rgba(148, 163, 184, 0.24);
-        box-sizing: border-box;
-      }
-
-      input {
-        background: #0b1220;
-        color: #f8fbff;
-      }
-
-      button {
-        background: #2563eb;
-        color: white;
-        border: 0;
-        cursor: pointer;
-        width: fit-content;
-      }
-
-      .muted {
-        color: #9fb1d1;
-      }
-
-      pre {
-        background: #0b1220;
-        border-radius: 10px;
-        padding: 12px;
-      }
+      body { font-family: Inter, Arial, sans-serif; margin: 0; background: #0f172a; color: #e5eefc; }
+      .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px; display: grid; gap: 16px; }
+      .card { background: #111827; border: 1px solid rgba(148, 163, 184, 0.16); border-radius: 14px; padding: 16px; display: grid; gap: 12px; }
+      label { display: grid; gap: 6px; }
+      input, textarea, button { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.24); box-sizing: border-box; }
+      textarea, input { background: #0b1220; color: #f8fbff; width: 100%; }
+      textarea { min-height: 120px; font-family: ui-monospace, SFMono-Regular, monospace; }
+      button { background: #2563eb; color: white; border: 0; cursor: pointer; width: fit-content; }
+      .muted { color: #9fb1d1; }
+      pre { background: #0b1220; border-radius: 10px; padding: 12px; }
     </style>
   </head>
   <body>
     <div class="wrap">
       <div class="card">
-        <h1>Marketplace Comparison Assistant Options</h1>
-        <div class="muted">Firefox-first defaults for ratings, taxes, and coupon behavior.</div>
+        <h1>MarketMatch Options</h1>
+        <div class="muted">Frontend-only Facebook source capture plus eBay Browse API search.</div>
       </div>
 
       <div class="card">
+        <h2>eBay API Settings</h2>
+        <div class="muted">Paste an eBay application access token generated outside the extension. The extension does not mint tokens because that would require securely handling an eBay client secret.</div>
+
+        <label>
+          eBay application token
+          <textarea id="ebayApplicationToken" placeholder="Paste your Bearer token here"></textarea>
+        </label>
+
+        <label>
+          Marketplace ID
+          <input id="ebayMarketplaceId" type="text" value="EBAY_US" />
+        </label>
+
+        <label>
+          End user ZIP for shipping context
+          <input id="endUserZip" type="text" value="" />
+        </label>
+
+        <label>
+          eBay match limit
+          <input id="ebayLimit" type="number" min="1" max="20" value="10" />
+        </label>
+      </div>
+
+      <div class="card">
+        <h2>Comparison Defaults</h2>
         <label>
           Default minimum positive ratings
           <input id="minPositiveRatings" type="number" min="0" value="5" />

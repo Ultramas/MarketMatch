@@ -1,10 +1,9 @@
 if (typeof importScripts === 'function') {
   importScripts(
     'lib/state.js',
+    'lib/ebay-api.js',
     'adapters/registry.js',
-    'adapters/ebay.js',
-    'adapters/facebook.js',
-    'adapters/craigslist.js'
+    'adapters/facebook.js'
   );
 }
 
@@ -28,25 +27,31 @@ chrome.runtime.onInstalled.addListener(async () => {
     'draft',
     'history',
     'consent',
+    'settings',
   ]);
-  const next = {
+
+  await chrome.storage.local.set({
     filters: { ...DEFAULT_FILTERS, ...(current.filters || {}) },
     sourceListing: current.sourceListing || null,
     results: current.results || [],
     draft: current.draft || null,
     history: current.history || [],
     consent: { ...DEFAULT_CONSENT, ...(current.consent || {}) },
-  };
-  await chrome.storage.local.set(next);
+    settings: {
+      ebayApplicationToken: '',
+      ebayMarketplaceId: 'EBAY_US',
+      ebayLimit: 10,
+      endUserZip: '',
+      minPositiveRatings: 5,
+      maxNegativeRatioDivisor: 5,
+      defaultTaxRate: 0,
+      defaultState: '',
+      ...(current.settings || {}),
+    },
+  });
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'BUILD_SEARCH_TARGETS') {
-    const query = String(message.query || '').trim();
-    sendResponse(buildSearchTargets(query));
-    return;
-  }
-
   if (message?.type === 'GET_PLATFORM') {
     const url = sender.tab?.url || '';
     sendResponse({ platform: detectPlatform(url) });
@@ -57,32 +62,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     saveHistoryEntry(message.entry).then((history) => sendResponse({ history }));
     return true;
   }
+
+  if (message?.type === 'SEARCH_EBAY_LISTINGS') {
+    searchEbayListings(message.payload)
+      .then((response) => sendResponse(response))
+      .catch((error) => sendResponse({ ok: false, error: error.message || 'eBay search failed.' }));
+    return true;
+  }
 });
 
 function detectPlatform(url) {
-  if (url.includes('ebay.com')) return 'ebay';
   if (url.includes('facebook.com')) return 'facebook';
-  if (url.includes('craigslist.org')) return 'craigslist';
+  if (url.includes('ebay.com')) return 'ebay';
   return 'unknown';
 }
 
-function buildSearchTargets(query) {
-  const adapters = globalThis.MarketMatchAdapters;
-  if (adapters?.listPlatforms) {
-    return adapters.listPlatforms().reduce((targets, platform) => {
-      const adapter = adapters.getAdapter(platform);
-      if (adapter?.buildSearchUrl) {
-        targets[platform] = adapter.buildSearchUrl(query);
-      }
-      return targets;
-    }, {});
+async function searchEbayListings(payload = {}) {
+  const { settings, filters } = await chrome.storage.local.get(['settings', 'filters']);
+  const searchEbayBrowse = globalThis.MarketMatchLib?.searchEbayBrowse;
+
+  if (typeof searchEbayBrowse !== 'function') {
+    return { ok: false, error: 'eBay API helper is not loaded.' };
   }
 
-  const encoded = encodeURIComponent(query);
+  const query = String(payload.query || '').trim();
+  if (!query) {
+    return { ok: false, error: 'Search query is required.' };
+  }
+
+  if (!settings?.ebayApplicationToken) {
+    return {
+      ok: false,
+      error: 'Missing eBay application token. Add one in extension options before searching.',
+    };
+  }
+
+  const response = await searchEbayBrowse({
+    query,
+    token: settings.ebayApplicationToken,
+    marketplaceId: settings.ebayMarketplaceId || 'EBAY_US',
+    limit: Number(settings.ebayLimit || 10),
+    endUserZip: settings.endUserZip || '',
+    freeShippingOnly: Boolean(filters?.freeShippingOnly),
+  });
+
   return {
-    ebay: `https://www.ebay.com/sch/i.html?_nkw=${encoded}`,
-    facebook: `https://www.facebook.com/marketplace/search/?query=${encoded}`,
-    craigslist: `https://www.craigslist.org/search/sss?query=${encoded}`,
+    ok: true,
+    query,
+    sourcePlatform: payload.sourcePlatform || 'facebook',
+    matches: response.matches || [],
+    requestMeta: response.requestMeta || {},
   };
 }
 

@@ -3,198 +3,65 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Marketplace Comparison Assistant</title>
+    <title>MarketMatch</title>
     <style>
-      body {
-        font-family: Inter, Arial, sans-serif;
-        width: 360px;
-        margin: 0;
-        padding: 0;
-        background: #0f172a;
-        color: #e5eefc;
-      }
-
-      .panel {
-        padding: 16px;
-        display: grid;
-        gap: 12px;
-      }
-
-      .stack {
-        display: grid;
-        gap: 8px;
-      }
-
-      .hero {
-        padding: 18px 16px 12px;
-        background: linear-gradient(135deg, #111827 0%, #1d4ed8 100%);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      }
-
-      h1 {
-        font-size: 16px;
-        margin: 0;
-      }
-
-      .subtle {
-        margin: 4px 0 0;
-        font-size: 12px;
-        color: #c7d7f8;
-      }
-
-      textarea,
-      input,
-      select,
-      button {
-        width: 100%;
-        box-sizing: border-box;
-        border-radius: 10px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-      }
-
-      textarea,
-      input,
-      select {
-        background: #111827;
-        color: #f8fbff;
-        padding: 10px 12px;
-      }
-
-      textarea {
-        min-height: 70px;
-      }
-
-      button {
-        background: #2563eb;
-        color: white;
-        padding: 10px 12px;
-        cursor: pointer;
-        border: 0;
-        font-weight: 600;
-      }
-
-      button.secondary {
-        background: #172033;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-      }
-
-      button.ghost {
-        background: transparent;
-        border: 1px dashed rgba(148, 163, 184, 0.35);
-        color: #c7d7f8;
-      }
-
-      .card {
-        background: #111827;
-        border: 1px solid rgba(148, 163, 184, 0.16);
-        border-radius: 14px;
-        padding: 12px;
-      }
-
-      .row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-      }
-
-      .muted {
-        color: #9fb1d1;
-        font-size: 12px;
-      }
-
-      .sectionTitle {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #9fb1d1;
-        margin-bottom: 8px;
-      }
-
-      .pillRow {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-
-      .pill {
-        border-radius: 999px;
-        padding: 5px 9px;
-        font-size: 11px;
-        background: rgba(37, 99, 235, 0.15);
-        color: #dbeafe;
-        border: 1px solid rgba(96, 165, 250, 0.22);
-      }
-
-      .miniList {
-        display: grid;
-        gap: 8px;
-      }
-
-      .miniItem {
-        padding: 8px 10px;
-        border-radius: 10px;
-        background: #0b1220;
-        border: 1px solid rgba(148, 163, 184, 0.12);
-      }
-
-      .miniItem strong {
-        display: block;
-        font-size: 12px;
-      }
-
-      .miniMeta {
-        font-size: 11px;
-        color: #8fa7cf;
-        margin-top: 3px;
-      }
-
-      .toggle {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 13px;
-      }
-
-      .toggle input {
-        width: auto;
-      }
-
-      #consentCard {
-        display: none;
-      }
-
-      #results {
-        white-space: pre-wrap;
-        font-size: 12px;
-        background: #0b1220;
-        padding: 8px;
-        border-radius: 10px;
-        max-height: 180px;
-        overflow: auto;
-      }
+      body { font-family: Inter, Arial, sans-serif; width: 380px; margin: 0; background: #0f172a; color: #e5eefc; }
+      .hero { padding: 16px; background: linear-gradient(135deg, #111827 0%, #1d4ed8 100%); border-bottom: 1px solid rgba(255,255,255,.08); }
+      .hero h1 { font-size: 17px; margin: 0; }
+      .subtle { margin: 4px 0 0; font-size: 12px; color: #c7d7f8; }
+      .panel { padding: 14px; display: grid; gap: 12px; }
+      .card { background: #111827; border: 1px solid rgba(148,163,184,.16); border-radius: 14px; padding: 12px; display: grid; gap: 10px; }
+      .sectionTitle { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #9fb1d1; }
+      .stack { display: grid; gap: 8px; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      input, textarea, select, button { width: 100%; box-sizing: border-box; border-radius: 10px; }
+      input, textarea, select { background: #0b1220; color: #f8fbff; border: 1px solid rgba(148,163,184,.24); padding: 10px 12px; }
+      textarea { min-height: 72px; }
+      button { background: #2563eb; color: white; border: 0; padding: 10px 12px; font-weight: 600; cursor: pointer; }
+      button.secondary { background: #172033; border: 1px solid rgba(148,163,184,.2); }
+      button.ghost { background: transparent; border: 1px dashed rgba(148,163,184,.35); color: #c7d7f8; }
+      .toggle { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+      .toggle input { width: auto; }
+      .muted { color: #9fb1d1; font-size: 12px; }
+      .pillRow { display: flex; flex-wrap: wrap; gap: 6px; }
+      .pill { border-radius: 999px; padding: 5px 9px; font-size: 11px; background: rgba(37,99,235,.15); color: #dbeafe; border: 1px solid rgba(96,165,250,.22); }
+      .miniList { display: grid; gap: 8px; }
+      .miniItem { padding: 9px 10px; border-radius: 10px; background: #0b1220; border: 1px solid rgba(148,163,184,.12); }
+      .miniItem strong { display: block; font-size: 12px; }
+      .miniMeta { font-size: 11px; color: #8fa7cf; margin-top: 3px; }
+      .matchCard { padding: 10px; border-radius: 12px; background: #0b1220; border: 1px solid rgba(148,163,184,.12); display: grid; gap: 6px; }
+      .matchHeader { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+      .priceBlock { text-align: right; }
+      .priceBlock strong { font-size: 14px; }
+      .flagRow { display: flex; flex-wrap: wrap; gap: 6px; }
+      .flag { font-size: 10px; padding: 4px 8px; border-radius: 999px; background: rgba(14,165,233,.12); color: #bae6fd; border: 1px solid rgba(125,211,252,.18); }
+      #consentCard { display: none; }
+      #results { white-space: pre-wrap; font-size: 12px; background: #0b1220; padding: 8px; border-radius: 10px; max-height: 180px; overflow: auto; }
     </style>
   </head>
   <body>
     <div class="hero">
-      <h1>Marketplace Comparison Assistant</h1>
-      <p class="subtle">Firefox-first manual comparison workflow for eBay, Facebook Marketplace, and Craigslist.</p>
+      <h1>MarketMatch</h1>
+      <p class="subtle">Capture a Facebook Marketplace listing, then compare it against eBay Browse API matches.</p>
     </div>
 
     <div class="panel">
       <div id="consentCard" class="card stack">
         <strong>Privacy Setup</strong>
-        <div class="muted">Allow cookies/history logging so the extension can save search and view history across sessions. Coupon lookup stays optional.</div>
-        <button id="allowCookies">Allow Cookies & History</button>
+        <div class="muted">Allow history logging so the extension can save searches and viewed Facebook source listings across sessions.</div>
+        <button id="allowCookies">Allow History</button>
         <button id="declineCookies" class="secondary">Continue Without Logging</button>
       </div>
 
       <div class="card stack">
+        <div class="sectionTitle">Facebook Source</div>
         <input id="brand" placeholder="Brand (optional)" />
-        <input id="title" placeholder="Title (required)" />
-        <textarea id="description" placeholder="Description (required)"></textarea>
+        <input id="title" placeholder="Facebook listing title (required)" />
+        <textarea id="description" placeholder="Facebook listing description (required)"></textarea>
       </div>
 
       <div class="card stack">
+        <div class="sectionTitle">Comparison Filters</div>
         <div class="row">
           <select id="distanceScope">
             <option value="any">Any distance</option>
@@ -204,61 +71,40 @@
           </select>
           <input id="userState" placeholder="State for tax" />
         </div>
-
         <div class="toggle"><input id="freeShippingOnly" type="checkbox" /> <span>Free shipping only</span></div>
         <div class="toggle"><input id="brandRequired" type="checkbox" /> <span>Require brand match</span></div>
-        <div class="toggle"><input id="sellerStandingBoost" type="checkbox" checked /> <span>Boost seller standing</span></div>
-        <div class="toggle"><input id="couponOptIn" type="checkbox" /> <span>Opt into coupon lookup</span></div>
+        <div class="toggle"><input id="sellerStandingBoost" type="checkbox" checked /> <span>Boost stronger eBay sellers</span></div>
       </div>
 
       <div class="stack">
-        <button id="captureListing">Capture Current Listing</button>
-        <button id="searchOtherPlatforms">Search Other Platforms</button>
-        <button id="collectResults" class="secondary">Collect Current Page Results</button>
+        <button id="captureListing">Capture Facebook Listing</button>
+        <button id="searchEbayMatches">Search eBay Matches</button>
         <button id="applyFilters" class="secondary">Save Filters & Draft</button>
         <button id="resetSession" class="ghost">Reset Current Session</button>
       </div>
 
       <div class="card stack">
-        <div class="sectionTitle">Source Listing</div>
-        <div id="sourceListingSummary" class="miniList">
-          <div class="miniItem">
-            <strong>No source listing captured</strong>
-            <div class="miniMeta">Capture a marketplace listing to anchor the comparison session.</div>
-          </div>
-        </div>
+        <div class="sectionTitle">Session Status</div>
+        <div class="pillRow" id="statusPills"></div>
+        <div id="apiStatus" class="muted">Checking eBay token status…</div>
       </div>
 
       <div class="card stack">
-        <div class="sectionTitle">Workflow Status</div>
-        <div class="pillRow" id="statusPills">
-          <span class="pill">Draft Ready</span>
-          <span class="pill">Manual Capture Flow</span>
-          <span class="pill">Firefox First</span>
-        </div>
+        <div class="sectionTitle">Captured Facebook Listing</div>
+        <div id="sourceListingSummary" class="miniList"></div>
       </div>
 
       <div class="card stack">
-        <div class="sectionTitle">Results Shell</div>
-        <div id="resultsSummary" class="miniList">
-          <div class="miniItem">
-            <strong>No ranked results yet</strong>
-            <div class="miniMeta">This section will later show best landed-cost matches across platforms.</div>
-          </div>
-        </div>
+        <div class="sectionTitle">Top eBay Matches</div>
+        <div id="resultsSummary" class="miniList"></div>
       </div>
 
       <div class="card stack">
         <div class="sectionTitle">Recent Activity</div>
-        <div id="historySummary" class="miniList">
-          <div class="miniItem">
-            <strong>No history yet</strong>
-            <div class="miniMeta">Searches and viewed listings only appear here after consent.</div>
-          </div>
-        </div>
+        <div id="historySummary" class="miniList"></div>
       </div>
 
-      <div class="muted">Manual-control skeleton only. Live selectors, ranking, coupons, and platform parsing still need implementation.</div>
+      <div class="muted">Frontend-only flow: scrape Facebook in-page, then call eBay Browse API using a token supplied in Options.</div>
       <div id="results">No actions run yet.</div>
     </div>
 
