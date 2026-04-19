@@ -111,6 +111,7 @@ That approach is safer for extension UX and easier to reason about than hidden b
 - After search, the extension enriches the top eBay matches with Browse `getItem` details for better shipping/condition/seller signals.
 - Query construction now strips noisy Facebook sales words and emphasizes stronger product/model tokens before calling eBay.
 - Popup ranking now includes lightweight match-confidence scoring and matched-token hints.
+- Popup match cards now show clearer price/shipping/confidence metrics plus direct eBay listing/search links.
 
 ## Next Build Steps
 1. Tune Facebook listing extraction selectors against more real Facebook Marketplace page variants.

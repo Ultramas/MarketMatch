@@ -252,6 +252,7 @@ function renderResultsSummary(results = []) {
 
   resultsSummaryNode.innerHTML = rankedResults.slice(0, 5).map((result) => {
     const flags = buildFlags(result);
+    const searchUrl = buildEbaySearchUrl(result.title || '');
     return `
       <div class="matchCard">
         <div class="matchHeader">
@@ -265,10 +266,28 @@ function renderResultsSummary(results = []) {
           </div>
         </div>
         <div class="miniMeta">Confidence ${Number(result.matchConfidence || 0).toFixed(0)}${result.matchedTokens?.length ? ` · ${escapeHtml(result.matchedTokens.join(', '))}` : ''}</div>
+        <div class="metricGrid">
+          <div class="metric">
+            <div class="metricLabel">Price</div>
+            <div class="metricValue">$${Number(result.listedPrice || 0).toFixed(2)}</div>
+          </div>
+          <div class="metric">
+            <div class="metricLabel">Shipping</div>
+            <div class="metricValue">${escapeHtml(formatCurrencyOrUnknown(result.shipping))}</div>
+          </div>
+          <div class="metric">
+            <div class="metricLabel">Confidence</div>
+            <div class="metricValue">${Number(result.matchConfidence || 0).toFixed(0)}</div>
+          </div>
+        </div>
         <div class="miniMeta">Item $${Number(result.listedPrice || 0).toFixed(2)} · Shipping ${formatCurrencyOrUnknown(result.shipping)} · Tax $${Number(result.taxes || 0).toFixed(2)}</div>
         <div class="miniMeta">Seller ${escapeHtml(result.sellerName || 'unknown')} ${result.sellerStanding ? `· ${escapeHtml(result.sellerStanding)}` : ''}</div>
         <div class="miniMeta">${escapeHtml(result.locationText || 'Location unavailable')}${Array.isArray(result.buyingOptions) && result.buyingOptions.length ? ` · ${escapeHtml(result.buyingOptions.join(', '))}` : ''}</div>
         ${flags.length ? `<div class="flagRow">${flags.map((flag) => `<span class="flag">${escapeHtml(flag)}</span>`).join('')}</div>` : ''}
+        <div class="actionRow">
+          <a class="actionLink" href="${escapeHtml(result.url || searchUrl)}" target="_blank" rel="noreferrer">Open Listing</a>
+          <a class="actionLink secondary" href="${escapeHtml(searchUrl)}" target="_blank" rel="noreferrer">Open Search</a>
+        </div>
       </div>
     `;
   }).join('');
@@ -491,6 +510,10 @@ function extractCountryToken(locationText) {
 
 function formatCurrencyOrUnknown(value) {
   return value == null ? 'unknown' : `$${Number(value).toFixed(2)}`;
+}
+
+function buildEbaySearchUrl(query) {
+  return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(String(query || '').trim())}`;
 }
 
 function escapeHtml(value) {

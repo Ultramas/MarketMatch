@@ -33,6 +33,13 @@
       .matchHeader { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
       .priceBlock { text-align: right; }
       .priceBlock strong { font-size: 14px; }
+      .metricGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      .metric { background: rgba(148,163,184,.08); border: 1px solid rgba(148,163,184,.12); border-radius: 10px; padding: 8px; }
+      .metricLabel { font-size: 10px; color: #8fa7cf; text-transform: uppercase; letter-spacing: .06em; }
+      .metricValue { font-size: 12px; font-weight: 700; color: #f8fbff; margin-top: 4px; }
+      .actionRow { display: flex; gap: 8px; }
+      .actionLink { flex: 1; text-align: center; text-decoration: none; background: #1d4ed8; color: white; border-radius: 10px; padding: 8px 10px; font-size: 12px; font-weight: 600; }
+      .actionLink.secondary { background: #172033; border: 1px solid rgba(148,163,184,.2); color: #dbeafe; }
       .flagRow { display: flex; flex-wrap: wrap; gap: 6px; }
       .flag { font-size: 10px; padding: 4px 8px; border-radius: 999px; background: rgba(14,165,233,.12); color: #bae6fd; border: 1px solid rgba(125,211,252,.18); }
       #consentCard { display: none; }
