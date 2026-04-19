@@ -12,6 +12,7 @@ const resultsNode = document.getElementById('results');
 const resultsSummaryNode = document.getElementById('resultsSummary');
 const historySummaryNode = document.getElementById('historySummary');
 const statusPillsNode = document.getElementById('statusPills');
+const sourceListingSummaryNode = document.getElementById('sourceListingSummary');
 let currentSettings = {};
 
 const FILTER_DEFAULTS = {
@@ -32,18 +33,20 @@ document.getElementById('captureListing').addEventListener('click', captureCurre
 document.getElementById('searchOtherPlatforms').addEventListener('click', searchOtherPlatforms);
 document.getElementById('collectResults').addEventListener('click', collectCurrentResults);
 document.getElementById('applyFilters').addEventListener('click', applyFilters);
+document.getElementById('resetSession').addEventListener('click', resetSession);
 document.getElementById('allowCookies').addEventListener('click', () => saveConsent(true));
 document.getElementById('declineCookies').addEventListener('click', () => saveConsent(false));
 
 bootstrap();
 
 async function bootstrap() {
-  const { draft, filters, consent, history, results, settings } = await chrome.storage.local.get([
+  const { draft, filters, consent, history, results, sourceListing, settings } = await chrome.storage.local.get([
     'draft',
     'filters',
     'consent',
     'history',
     'results',
+    'sourceListing',
     'settings',
   ]);
 
@@ -54,6 +57,7 @@ async function bootstrap() {
   renderStatusPills(filters, consent);
   renderHistorySummary(history || []);
   renderResultsSummary(results || []);
+  renderSourceListingSummary(sourceListing);
 
   if (history?.length) {
     render({ recentHistory: history.slice(0, 5) });
@@ -85,6 +89,7 @@ async function captureCurrentListing() {
 
   await chrome.storage.local.set({ sourceListing: response, results: [] });
   renderResultsSummary([]);
+  renderSourceListingSummary(response);
   await persistDraft();
   await maybeSaveHistory({
     type: 'view',
@@ -188,6 +193,29 @@ async function applyFilters() {
   render({ message: 'Saved filter defaults. Implement filtering in src/lib/filters.js.' });
 }
 
+async function resetSession() {
+  const createEmptySessionState = globalThis.MarketMatchLib?.createEmptySessionState;
+  const emptyState = typeof createEmptySessionState === 'function'
+    ? createEmptySessionState()
+    : {
+      draft: { brand: '', title: '', description: '' },
+      filters: { ...FILTER_DEFAULTS },
+      sourceListing: null,
+      results: [],
+    };
+
+  await chrome.storage.local.set({
+    draft: emptyState.draft,
+    sourceListing: emptyState.sourceListing,
+    results: emptyState.results,
+  });
+
+  restoreDraft(emptyState.draft);
+  renderResultsSummary([]);
+  renderSourceListingSummary(null);
+  render({ message: 'Cleared draft, source listing, and collected results for the current session.' });
+}
+
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
@@ -225,6 +253,20 @@ function renderHistorySummary(history = []) {
       <div class="miniMeta">${escapeHtml(entry.platform || 'unknown')} · ${escapeHtml(entry.type || 'event')}</div>
     </div>
   `).join('');
+}
+
+function renderSourceListingSummary(sourceListing) {
+  if (!sourceListing) {
+    sourceListingSummaryNode.innerHTML = `<div class="miniItem"><strong>No source listing captured</strong><div class="miniMeta">Capture a marketplace listing to anchor the comparison session.</div></div>`;
+    return;
+  }
+
+  sourceListingSummaryNode.innerHTML = `
+    <div class="miniItem">
+      <strong>${escapeHtml(sourceListing.title || 'Untitled source listing')}</strong>
+      <div class="miniMeta">${escapeHtml(sourceListing.platform || 'unknown')} · ${escapeHtml(sourceListing.condition || 'condition unknown')}</div>
+    </div>
+  `;
 }
 
 function renderStatusPills(filters = {}, consent = {}) {

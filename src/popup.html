@@ -78,6 +78,12 @@
         border: 1px solid rgba(148, 163, 184, 0.2);
       }
 
+      button.ghost {
+        background: transparent;
+        border: 1px dashed rgba(148, 163, 184, 0.35);
+        color: #c7d7f8;
+      }
+
       .card {
         background: #111827;
         border: 1px solid rgba(148, 163, 184, 0.16);
@@ -210,6 +216,17 @@
         <button id="searchOtherPlatforms">Search Other Platforms</button>
         <button id="collectResults" class="secondary">Collect Current Page Results</button>
         <button id="applyFilters" class="secondary">Save Filters & Draft</button>
+        <button id="resetSession" class="ghost">Reset Current Session</button>
+      </div>
+
+      <div class="card stack">
+        <div class="sectionTitle">Source Listing</div>
+        <div id="sourceListingSummary" class="miniList">
+          <div class="miniItem">
+            <strong>No source listing captured</strong>
+            <div class="miniMeta">Capture a marketplace listing to anchor the comparison session.</div>
+          </div>
+        </div>
       </div>
 
       <div class="card stack">
@@ -249,6 +266,7 @@
     <script src="lib/filters.js"></script>
     <script src="lib/history.js"></script>
     <script src="lib/ranking.js"></script>
+    <script src="lib/state.js"></script>
     <script src="popup.js"></script>
   </body>
   </html>
