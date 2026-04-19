@@ -108,6 +108,7 @@ That approach is safer for extension UX and easier to reason about than hidden b
 - This scaffold stores popup inputs, preferences, consent state, and eBay token/config in extension storage.
 - Tax calculation should use two modes: parsed from page when available, otherwise estimated from a default rate or a state-based rate when the user provides a state.
 - Current popup filtering is active for free shipping, seller-threshold heuristics, brand-required matching, and basic location matching from captured Facebook/eBay location strings.
+- After search, the extension enriches the top eBay matches with Browse `getItem` details for better shipping/condition/seller signals.
 
 ## Next Build Steps
 1. Tune Facebook listing extraction selectors against real Facebook Marketplace pages.

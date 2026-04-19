@@ -24,5 +24,6 @@ Keep Facebook source scraping, eBay API calls, ranking, persistence, and popup p
 - `manifest.json` injects the Facebook adapter and `src/content.js` only on Facebook pages.
 - `src/content.js` captures the Facebook source listing through the registered adapter.
 - `src/background.js` owns eBay Browse API calls and uses `src/lib/ebay-api.js` plus stored Options settings.
+- `src/background.js` also enriches the top eBay search results with Browse `getItem` before sending them back to the popup.
 - `src/popup.html` loads shared normalize/filter/history/ranking/state helpers before `src/popup.js`.
 - The extension is frontend-only; eBay application tokens are supplied via Options rather than minted inside the extension.

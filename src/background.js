@@ -78,8 +78,9 @@ function detectPlatform(url) {
 }
 
 async function searchEbayListings(payload = {}) {
-  const { settings, filters } = await chrome.storage.local.get(['settings', 'filters']);
+  const { settings } = await chrome.storage.local.get(['settings']);
   const searchEbayBrowse = globalThis.MarketMatchLib?.searchEbayBrowse;
+  const enrichEbayMatches = globalThis.MarketMatchLib?.enrichEbayMatches;
 
   if (typeof searchEbayBrowse !== 'function') {
     return { ok: false, error: 'eBay API helper is not loaded.' };
@@ -103,14 +104,23 @@ async function searchEbayListings(payload = {}) {
     marketplaceId: settings.ebayMarketplaceId || 'EBAY_US',
     limit: Number(settings.ebayLimit || 10),
     endUserZip: settings.endUserZip || '',
-    freeShippingOnly: Boolean(filters?.freeShippingOnly),
   });
+
+  const matches = typeof enrichEbayMatches === 'function'
+    ? await enrichEbayMatches({
+      matches: response.matches || [],
+      token: settings.ebayApplicationToken,
+      marketplaceId: settings.ebayMarketplaceId || 'EBAY_US',
+      endUserZip: settings.endUserZip || '',
+      topN: 3,
+    })
+    : (response.matches || []);
 
   return {
     ok: true,
     query,
     sourcePlatform: payload.sourcePlatform || 'facebook',
-    matches: response.matches || [],
+    matches,
     requestMeta: response.requestMeta || {},
   };
 }

@@ -14,15 +14,7 @@
       fieldgroups: 'EXTENDED',
     });
 
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-      'X-EBAY-C-MARKETPLACE-ID': marketplaceId,
-    };
-
-    if (endUserZip) {
-      headers['X-EBAY-C-ENDUSERCTX'] = `contextualLocation=country=US,zip=${encodeURIComponent(endUserZip)}`;
-    }
+    const headers = buildHeaders({ token, marketplaceId, endUserZip });
 
     const response = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${params.toString()}`, {
       method: 'GET',
@@ -43,6 +35,45 @@
         limit: data.limit || 0,
       },
     };
+  };
+
+  lib.getEbayBrowseItem = async function getEbayBrowseItem({ itemId, token, marketplaceId = 'EBAY_US', endUserZip = '' }) {
+    const headers = buildHeaders({ token, marketplaceId, endUserZip });
+    const response = await fetch(`https://api.ebay.com/buy/browse/v1/item/${encodeURIComponent(itemId)}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`eBay item API error ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    return mapItemDetails(data);
+  };
+
+  lib.enrichEbayMatches = async function enrichEbayMatches({ matches = [], token, marketplaceId = 'EBAY_US', endUserZip = '', topN = 3 }) {
+    const limit = Math.max(0, Math.min(Number(topN) || 0, matches.length));
+    const enriched = await Promise.all(matches.map(async (match, index) => {
+      if (index >= limit || !match.id) {
+        return match;
+      }
+
+      try {
+        const detail = await lib.getEbayBrowseItem({
+          itemId: match.id,
+          token,
+          marketplaceId,
+          endUserZip,
+        });
+        return mergeMatchWithDetail(match, detail);
+      } catch {
+        return match;
+      }
+    }));
+
+    return enriched;
   };
 
   function mapItemSummary(item) {
@@ -78,6 +109,25 @@
     };
   }
 
+  function mapItemDetails(item) {
+    const shippingOption = pickPreferredShippingOption(item.shippingOptions || []);
+    return {
+      id: item.itemId || '',
+      shipping: shippingOption?.shippingCost?.value != null ? Number(shippingOption.shippingCost.value) : null,
+      taxes: null,
+      condition: item.condition || item.conditionDescription || '',
+      sellerName: item.seller?.username || '',
+      sellerStanding: item.seller?.feedbackPercentage ? `Feedback ${item.seller.feedbackPercentage}%` : '',
+      positiveRatings: item.seller?.feedbackScore || 0,
+      locationText: [item.itemLocation?.city, item.itemLocation?.stateOrProvince, item.itemLocation?.country]
+        .filter(Boolean)
+        .join(', '),
+      buyingOptions: item.buyingOptions || [],
+      bestOfferDetected: Array.isArray(item.buyingOptions) && item.buyingOptions.includes('BEST_OFFER'),
+      notes: ['Enriched from eBay Browse API getItem response.'],
+    };
+  }
+
   function buildMatchReason(item) {
     const reasons = [];
     if (item.condition) reasons.push(item.condition);
@@ -95,5 +145,36 @@
     });
 
     return shipToHome || shippingOptions[0] || null;
+  }
+
+  function buildHeaders({ token, marketplaceId, endUserZip }) {
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      'X-EBAY-C-MARKETPLACE-ID': marketplaceId,
+    };
+
+    if (endUserZip) {
+      headers['X-EBAY-C-ENDUSERCTX'] = `contextualLocation=country=US,zip=${encodeURIComponent(endUserZip)}`;
+    }
+
+    return headers;
+  }
+
+  function mergeMatchWithDetail(match, detail) {
+    return {
+      ...match,
+      ...detail,
+      shipping: detail.shipping != null ? detail.shipping : match.shipping,
+      taxes: detail.taxes != null ? detail.taxes : match.taxes,
+      condition: detail.condition || match.condition,
+      sellerName: detail.sellerName || match.sellerName,
+      sellerStanding: detail.sellerStanding || match.sellerStanding,
+      positiveRatings: detail.positiveRatings || match.positiveRatings,
+      locationText: detail.locationText || match.locationText,
+      buyingOptions: detail.buyingOptions?.length ? detail.buyingOptions : match.buyingOptions,
+      bestOfferDetected: Boolean(detail.bestOfferDetected || match.bestOfferDetected),
+      notes: [...(match.notes || []), ...(detail.notes || [])],
+    };
   }
 })(globalThis);
