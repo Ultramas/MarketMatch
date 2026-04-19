@@ -1,3 +1,15 @@
+const DEFAULT_SETTINGS = {
+  ebayApplicationToken: '',
+  ebayMarketplaceId: 'EBAY_US',
+  ebayLimit: 10,
+  endUserZip: '',
+  minPositiveRatings: 5,
+  maxNegativeRatioDivisor: 5,
+  defaultTaxRate: 0,
+  defaultState: '',
+  ...(globalThis.MarketMatchLib?.DEFAULT_SETTINGS || {}),
+};
+
 const titleInput = document.getElementById('title');
 const descriptionInput = document.getElementById('description');
 const brandInput = document.getElementById('brand');
@@ -15,7 +27,7 @@ const statusPillsNode = document.getElementById('statusPills');
 const sourceListingSummaryNode = document.getElementById('sourceListingSummary');
 const apiStatusNode = document.getElementById('apiStatus');
 
-let currentSettings = {};
+let currentSettings = { ...DEFAULT_SETTINGS };
 let currentSourceListing = null;
 let currentResults = [];
 let sourceSyncTimer = null;
@@ -35,6 +47,7 @@ const FILTER_DEFAULTS = {
   sellerStandingBoost: true,
   userState: '',
   defaultTaxRate: 0,
+  ...(globalThis.MarketMatchLib?.DEFAULT_FILTERS || {}),
 };
 
 document.getElementById('captureListing').addEventListener('click', captureCurrentListing);
@@ -61,12 +74,13 @@ async function bootstrap() {
     'settings',
   ]);
 
-  currentSettings = settings || {};
+  const effectiveSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  currentSettings = effectiveSettings;
   currentSourceListing = sourceListing || null;
   currentResults = results || [];
   restoreDraft(draft);
   lastSearchSourceSignature = String(savedSearchSourceSignature || '');
-  restoreFilters(filters, settings);
+  restoreFilters(filters, effectiveSettings);
   updateConsentUI(consent);
   let renderedSourceChangeWarning = false;
   const activeSourceSignature = computeSourceSignature(readCurrentSourceListing());
@@ -77,12 +91,12 @@ async function bootstrap() {
     render({ message: 'Source changed since the last search. Re-run search for fresh matches.' });
     renderedSourceChangeWarning = true;
   }
-  renderStatusPills(filters, consent, settings);
+  renderStatusPills(filters, consent, effectiveSettings);
   renderHistorySummary(history || []);
   renderResultsSummary(currentResults);
   renderResultsMeta();
   renderSourceListingSummary(readCurrentSourceListing());
-  renderApiStatus(settings);
+  renderApiStatus(effectiveSettings);
 
   if (history?.length && !renderedSourceChangeWarning) {
     render({ recentHistory: history.slice(0, 5) });
@@ -259,28 +273,27 @@ async function searchEbayMatches() {
 async function applyFilters() {
   const saved = await getSavedFilters();
   const { settings } = await chrome.storage.local.get(['settings']);
-  currentSettings = settings || {};
+  const effectiveSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  currentSettings = effectiveSettings;
 
   const filters = {
     ...FILTER_DEFAULTS,
-    ...(settings ? {
-      minPositiveRatings: settings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings,
-      maxNegativeRatioDivisor: settings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor,
-      defaultTaxRate: settings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate,
-      userState: settings.defaultState ?? FILTER_DEFAULTS.userState,
-    } : {}),
+    minPositiveRatings: effectiveSettings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings,
+    maxNegativeRatioDivisor: effectiveSettings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor,
+    defaultTaxRate: effectiveSettings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate,
+    userState: effectiveSettings.defaultState ?? FILTER_DEFAULTS.userState,
     ...saved,
     distanceScope: distanceScopeInput.value,
     brandRequired: brandRequiredInput.checked,
     brand: brandInput.value.trim(),
     freeShippingOnly: freeShippingOnlyInput.checked,
     sellerStandingBoost: sellerStandingBoostInput.checked,
-    userState: userStateInput.value.trim() || settings?.defaultState || '',
+    userState: userStateInput.value.trim() || effectiveSettings.defaultState || '',
   };
 
   await chrome.storage.local.set({ filters });
   await persistDraft();
-  renderStatusPills(filters, await getSavedConsent(), settings);
+  renderStatusPills(filters, await getSavedConsent(), effectiveSettings);
   render({ message: 'Saved Facebook-to-eBay comparison filters.' });
 }
 
@@ -491,12 +504,10 @@ function restoreDraft(draft = {}) {
 function restoreFilters(filters = {}, settings = {}) {
   const merged = {
     ...FILTER_DEFAULTS,
-    ...(settings ? {
-      minPositiveRatings: settings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings,
-      maxNegativeRatioDivisor: settings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor,
-      defaultTaxRate: settings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate,
-      userState: settings.defaultState ?? FILTER_DEFAULTS.userState,
-    } : {}),
+    minPositiveRatings: settings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings,
+    maxNegativeRatioDivisor: settings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor,
+    defaultTaxRate: settings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate,
+    userState: settings.defaultState ?? FILTER_DEFAULTS.userState,
     ...(filters || {}),
   };
 

@@ -13,9 +13,28 @@ if (typeof importScripts === 'function') {
 const DEFAULT_FILTERS = {
   distanceScope: 'any',
   sameLocationValue: '',
+  brandRequired: false,
+  brand: '',
+  freeShippingOnly: false,
   minPositiveRatings: 5,
   maxNegativeRatioDivisor: 5,
+  sellerStandingBoost: true,
+  userState: '',
+  defaultTaxRate: 0,
+  couponOptIn: false,
   ...(globalThis.MarketMatchLib?.DEFAULT_FILTERS || {}),
+};
+
+const DEFAULT_SETTINGS = {
+  ebayApplicationToken: '',
+  ebayMarketplaceId: 'EBAY_US',
+  ebayLimit: 10,
+  endUserZip: '',
+  minPositiveRatings: 5,
+  maxNegativeRatioDivisor: 5,
+  defaultTaxRate: 0,
+  defaultState: '',
+  ...(globalThis.MarketMatchLib?.DEFAULT_SETTINGS || {}),
 };
 
 const DEFAULT_CONSENT = {
@@ -49,17 +68,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     draft: current.draft || null,
     history: current.history || [],
     consent: { ...DEFAULT_CONSENT, ...(current.consent || {}) },
-    settings: {
-      ebayApplicationToken: '',
-      ebayMarketplaceId: 'EBAY_US',
-      ebayLimit: 10,
-      endUserZip: '',
-      minPositiveRatings: 5,
-      maxNegativeRatioDivisor: 5,
-      defaultTaxRate: 0,
-      defaultState: '',
-      ...(current.settings || {}),
-    },
+    settings: { ...DEFAULT_SETTINGS, ...(current.settings || {}) },
   });
 });
 
@@ -96,6 +105,7 @@ async function searchEbayListings(payload = {}) {
   const buildQueryVariants = globalThis.MarketMatchLib?.buildQueryVariants;
   const rankResults = globalThis.MarketMatchLib?.rankResults;
   const buildComparableResult = globalThis.MarketMatchLib?.buildComparableResult;
+  const activeSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
 
   if (typeof searchEbayBrowse !== 'function') {
     return { ok: false, error: 'eBay API helper is not loaded.' };
@@ -117,17 +127,17 @@ async function searchEbayListings(payload = {}) {
     return { ok: false, error: 'Search query is required.' };
   }
 
-  if (!settings?.ebayApplicationToken) {
+  if (!activeSettings.ebayApplicationToken) {
     return {
       ok: false,
       error: 'Missing eBay application token. Add one in extension options before searching.',
     };
   }
 
-  const searchLimit = Number(settings.ebayLimit || 10);
+  const searchLimit = Number(activeSettings.ebayLimit || DEFAULT_SETTINGS.ebayLimit);
   const sourceListing = buildSearchSourceListing(payload.sourceListing, sourceInput);
   const rankingOptions = {
-    defaultTaxRate: Number(settings.defaultTaxRate || 0),
+    defaultTaxRate: Number(activeSettings.defaultTaxRate || DEFAULT_SETTINGS.defaultTaxRate),
     sellerStandingBoost: payload.sellerStandingBoost !== false,
     sourceListing,
   };
@@ -137,10 +147,10 @@ async function searchEbayListings(payload = {}) {
   for (const candidateQuery of candidateQueries.slice(0, MAX_QUERY_ATTEMPTS)) {
     const response = await searchEbayBrowse({
       query: candidateQuery,
-      token: settings.ebayApplicationToken,
-      marketplaceId: settings.ebayMarketplaceId || 'EBAY_US',
+      token: activeSettings.ebayApplicationToken,
+      marketplaceId: activeSettings.ebayMarketplaceId || DEFAULT_SETTINGS.ebayMarketplaceId,
       limit: searchLimit,
-      endUserZip: settings.endUserZip || '',
+      endUserZip: activeSettings.endUserZip || '',
     });
 
     const attemptMatches = (response.matches || []).map((match) => attachQueryVariant(match, candidateQuery));
@@ -181,9 +191,9 @@ async function searchEbayListings(payload = {}) {
   const matches = typeof enrichEbayMatches === 'function'
     ? await enrichEbayMatches({
       matches: dedupedMatches,
-      token: settings.ebayApplicationToken,
-      marketplaceId: settings.ebayMarketplaceId || 'EBAY_US',
-      endUserZip: settings.endUserZip || '',
+      token: activeSettings.ebayApplicationToken,
+      marketplaceId: activeSettings.ebayMarketplaceId || DEFAULT_SETTINGS.ebayMarketplaceId,
+      endUserZip: activeSettings.endUserZip || '',
       topN: ENRICH_TOP_MATCHES,
     })
     : dedupedMatches;
