@@ -12,6 +12,9 @@ document.getElementById('save').addEventListener('click', save);
 restore();
 
 async function save() {
+  const rawTaxRate = Number(defaultTaxRateNode.value || 0);
+  const normalizedTaxRate = rawTaxRate > 1 ? rawTaxRate / 100 : rawTaxRate;
+
   const settings = {
     ebayApplicationToken: String(ebayApplicationTokenNode.value || '').trim(),
     ebayMarketplaceId: String(ebayMarketplaceIdNode.value || 'EBAY_US').trim() || 'EBAY_US',
@@ -19,7 +22,7 @@ async function save() {
     ebayLimit: Number(ebayLimitNode.value || 10),
     minPositiveRatings: Number(minPositiveRatingsNode.value || 5),
     maxNegativeRatioDivisor: Number(maxNegativeRatioDivisorNode.value || 5),
-    defaultTaxRate: Number(defaultTaxRateNode.value || 0),
+    defaultTaxRate: Math.max(0, Math.min(normalizedTaxRate, 1)),
     defaultState: String(defaultStateNode.value || '').trim(),
   };
 

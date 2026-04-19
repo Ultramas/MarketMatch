@@ -15,6 +15,7 @@ const sourceListingSummaryNode = document.getElementById('sourceListingSummary')
 const apiStatusNode = document.getElementById('apiStatus');
 
 let currentSettings = {};
+let currentSourceListing = null;
 
 const FILTER_DEFAULTS = {
   distanceScope: 'any',
@@ -50,6 +51,7 @@ async function bootstrap() {
   ]);
 
   currentSettings = settings || {};
+  currentSourceListing = sourceListing || null;
   restoreDraft(draft);
   restoreFilters(filters, settings);
   updateConsentUI(consent);
@@ -86,11 +88,9 @@ async function captureCurrentListing() {
 
   titleInput.value = response.title;
   descriptionInput.value = response.description;
-  if (!brandInput.value && response.title) {
-    brandInput.value = guessBrandFromTitle(response.title);
-  }
 
   await chrome.storage.local.set({ sourceListing: response, results: [] });
+  currentSourceListing = response;
   renderSourceListingSummary(response);
   renderResultsSummary([]);
   await persistDraft();
@@ -116,13 +116,19 @@ async function searchEbayMatches() {
   await chrome.storage.local.set({ results: [] });
   renderResultsSummary([]);
 
-  const response = await chrome.runtime.sendMessage({
-    type: 'SEARCH_EBAY_LISTINGS',
-    payload: {
-      query,
-      sourcePlatform: 'facebook',
-    },
-  });
+  let response;
+  try {
+    response = await chrome.runtime.sendMessage({
+      type: 'SEARCH_EBAY_LISTINGS',
+      payload: {
+        query,
+        sourcePlatform: 'facebook',
+      },
+    });
+  } catch {
+    render({ error: 'The background search failed before eBay returned results. Check your token and reload the extension.' });
+    return;
+  }
 
   if (!response?.ok) {
     render(response || { error: 'eBay search failed.' });
@@ -187,6 +193,7 @@ async function resetSession() {
     results: emptyState.results,
   });
 
+  currentSourceListing = null;
   restoreDraft(emptyState.draft);
   renderSourceListingSummary(null);
   renderResultsSummary([]);
@@ -237,7 +244,12 @@ function renderResultsSummary(results = []) {
     return;
   }
 
-  const rankedResults = rankResultsForDisplay(results);
+  const rankedResults = filterAndRankResultsForDisplay(results);
+  if (!rankedResults.length) {
+    resultsSummaryNode.innerHTML = `<div class="miniItem"><strong>No matches passed the current filters</strong><div class="miniMeta">Relax shipping, brand, seller, or location filters and try again.</div></div>`;
+    return;
+  }
+
   resultsSummaryNode.innerHTML = rankedResults.slice(0, 5).map((result) => {
     const flags = buildFlags(result);
     return `
@@ -252,7 +264,7 @@ function renderResultsSummary(results = []) {
             <strong>$${Number(result.totalCost || 0).toFixed(2)}</strong>
           </div>
         </div>
-        <div class="miniMeta">Item $${Number(result.listedPrice || 0).toFixed(2)} · Shipping $${Number(result.shipping || 0).toFixed(2)} · Tax $${Number(result.taxes || 0).toFixed(2)}</div>
+        <div class="miniMeta">Item $${Number(result.listedPrice || 0).toFixed(2)} · Shipping ${formatCurrencyOrUnknown(result.shipping)} · Tax $${Number(result.taxes || 0).toFixed(2)}</div>
         <div class="miniMeta">Seller ${escapeHtml(result.sellerName || 'unknown')} ${result.sellerStanding ? `· ${escapeHtml(result.sellerStanding)}` : ''}</div>
         <div class="miniMeta">${escapeHtml(result.locationText || 'Location unavailable')}${Array.isArray(result.buyingOptions) && result.buyingOptions.length ? ` · ${escapeHtml(result.buyingOptions.join(', '))}` : ''}</div>
         ${flags.length ? `<div class="flagRow">${flags.map((flag) => `<span class="flag">${escapeHtml(flag)}</span>`).join('')}</div>` : ''}
@@ -365,10 +377,70 @@ function rankResultsForDisplay(results) {
   });
 }
 
+function filterAndRankResultsForDisplay(results) {
+  const sourceListing = readCurrentSourceListing();
+  const filtered = results.filter((result) => passesActiveFilters(result, sourceListing));
+  return rankResultsForDisplay(filtered);
+}
+
+function passesActiveFilters(result, sourceListing) {
+  if (freeShippingOnlyInput.checked && Number(result.shipping) !== 0) {
+    return false;
+  }
+
+  if (brandRequiredInput.checked) {
+    const brand = brandInput.value.trim().toLowerCase();
+    if (brand && !String(result.title || '').toLowerCase().includes(brand)) {
+      return false;
+    }
+  }
+
+  const passesSellerRating = globalThis.MarketMatchLib?.passesSellerRating;
+  if (typeof passesSellerRating === 'function' && !passesSellerRating(result, {
+    minPositiveRatings: Number(currentSettings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings),
+    maxNegativeRatioDivisor: Number(currentSettings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor),
+  })) {
+    return false;
+  }
+
+  if (!passesDistanceFilter(result, sourceListing)) {
+    return false;
+  }
+
+  return true;
+}
+
+function passesDistanceFilter(result, sourceListing) {
+  const scope = distanceScopeInput.value;
+  if (scope === 'any') return true;
+
+  const sourceLocation = String(sourceListing?.locationText || '').toLowerCase();
+  const resultLocation = String(result.locationText || '').toLowerCase();
+  if (!sourceLocation || !resultLocation) return false;
+
+  if (scope === 'city') {
+    const sourceCity = sourceLocation.split(',')[0]?.trim();
+    return Boolean(sourceCity) && resultLocation.includes(sourceCity);
+  }
+
+  if (scope === 'state') {
+    const state = userStateInput.value.trim().toLowerCase() || extractStateToken(sourceLocation);
+    return Boolean(state) && resultLocation.includes(state);
+  }
+
+  if (scope === 'country') {
+    const country = extractCountryToken(sourceLocation);
+    return Boolean(country) && resultLocation.includes(country);
+  }
+
+  return true;
+}
+
 function buildFlags(result) {
   const flags = [];
   if (result.bestOfferDetected) flags.push('Best Offer');
-  if (Number(result.shipping || 0) === 0) flags.push('Free Shipping');
+  if (Number(result.shipping) === 0) flags.push('Free Shipping');
+  if (result.shipping == null) flags.push('Shipping Unknown');
   if (result.sellerStanding) flags.push('Seller Signal');
   if (result.locationText) flags.push(result.locationText);
   return flags;
@@ -397,8 +469,26 @@ function detectPlatformFromUrl(url = '') {
   return 'unknown';
 }
 
-function guessBrandFromTitle(title) {
-  return String(title || '').split(' ').slice(0, 1).join('');
+function readCurrentSourceListing() {
+  return currentSourceListing || {
+    title: titleInput.value.trim(),
+    description: descriptionInput.value.trim(),
+    locationText: '',
+  };
+}
+
+function extractStateToken(locationText) {
+  const parts = String(locationText || '').split(',').map((part) => part.trim()).filter(Boolean);
+  return parts[1]?.toLowerCase() || '';
+}
+
+function extractCountryToken(locationText) {
+  const parts = String(locationText || '').split(',').map((part) => part.trim()).filter(Boolean);
+  return parts[parts.length - 1]?.toLowerCase() || '';
+}
+
+function formatCurrencyOrUnknown(value) {
+  return value == null ? 'unknown' : `$${Number(value).toFixed(2)}`;
 }
 
 function escapeHtml(value) {

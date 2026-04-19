@@ -33,6 +33,7 @@ Firefox-first browser extension for capturing a Facebook Marketplace listing and
   Default minimum positive ratings: `5`
   Default maximum negatives: `floor(positive / 5)` with a minimum cap of `1`.
 - Free shipping filter.
+- Free shipping filtering only passes explicitly zero-cost eBay shipping; unknown shipping is not treated as free.
 - If the description contains a money amount, prefer that over the visible listing price.
 - Flag if `best offer` or `offer` appears in title or description.
 - On Facebook Marketplace, ignore and flag `free`, `$1`, or `1$` placeholder prices.
@@ -106,6 +107,7 @@ That approach is safer for extension UX and easier to reason about than hidden b
 - eBay Browse API requires an OAuth application token, but token minting is intentionally left outside the extension because embedding client-secret-based auth in frontend code is unsafe.
 - This scaffold stores popup inputs, preferences, consent state, and eBay token/config in extension storage.
 - Tax calculation should use two modes: parsed from page when available, otherwise estimated from a default rate or a state-based rate when the user provides a state.
+- Current popup filtering is active for free shipping, seller-threshold heuristics, brand-required matching, and basic location matching from captured Facebook/eBay location strings.
 
 ## Next Build Steps
 1. Tune Facebook listing extraction selectors against real Facebook Marketplace pages.

@@ -7,17 +7,12 @@
     marketplaceId = 'EBAY_US',
     limit = 10,
     endUserZip = '',
-    freeShippingOnly = false,
   }) {
     const params = new URLSearchParams({
       q: query,
       limit: String(Math.min(Math.max(Number(limit) || 10, 1), 20)),
       fieldgroups: 'EXTENDED',
     });
-
-    if (freeShippingOnly) {
-      params.set('filter', 'deliveryOptions:{SELLER_ARRANGED_LOCAL_PICKUP|SHIP_TO_HOME}');
-    }
 
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -51,8 +46,10 @@
   };
 
   function mapItemSummary(item) {
-    const shippingOption = Array.isArray(item.shippingOptions) ? item.shippingOptions[0] : null;
-    const shipping = shippingOption?.shippingCost?.value ? Number(shippingOption.shippingCost.value) : 0;
+    const shippingOption = pickPreferredShippingOption(item.shippingOptions || []);
+    const shipping = shippingOption?.shippingCost?.value != null
+      ? Number(shippingOption.shippingCost.value)
+      : null;
     const price = item.price?.value ? Number(item.price.value) : 0;
 
     return {
@@ -69,6 +66,7 @@
       sellerStanding: item.seller?.feedbackPercentage ? `Feedback ${item.seller.feedbackPercentage}%` : '',
       positiveRatings: item.seller?.feedbackScore || 0,
       negativeRatings: 0,
+      deliveryType: shippingOption?.shippingServiceCode || shippingOption?.type || '',
       locationText: [item.itemLocation?.city, item.itemLocation?.stateOrProvince, item.itemLocation?.country]
         .filter(Boolean)
         .join(', '),
@@ -84,7 +82,18 @@
     const reasons = [];
     if (item.condition) reasons.push(item.condition);
     if (item.seller?.feedbackPercentage) reasons.push(`${item.seller.feedbackPercentage}% seller feedback`);
-    if (item.shippingOptions?.some((option) => option.shippingCost?.value === '0.0')) reasons.push('free shipping');
+    if (item.shippingOptions?.some((option) => Number(option.shippingCost?.value) === 0)) reasons.push('free shipping');
     return reasons.join(' · ');
+  }
+
+  function pickPreferredShippingOption(shippingOptions) {
+    if (!Array.isArray(shippingOptions) || !shippingOptions.length) return null;
+
+    const shipToHome = shippingOptions.find((option) => {
+      const summary = `${option.shippingServiceCode || ''} ${option.type || ''} ${option.optionType || ''}`;
+      return /ship|delivery/i.test(summary) && !/pickup/i.test(summary);
+    });
+
+    return shipToHome || shippingOptions[0] || null;
   }
 })(globalThis);
