@@ -4,20 +4,21 @@
       platform: 'facebook',
       captureListing(context = {}) {
         const doc = context.document || document;
-        const title = firstText(doc, [
+        const mainRoot = findMainRoot(doc);
+        const title = normalizeFacebookTitle(firstText(doc, [
           'meta[property="og:title"]',
-          'h1',
           '[role="main"] h1',
-        ], 'content');
+          'h1',
+        ], 'content'));
 
-        const description = extractDescription(doc);
+        const description = extractDescription(doc, mainRoot);
         const listedPrice = extractPrice(doc);
-        const sellerName = firstText(doc, [
+        const sellerName = normalizeSellerName(firstText(doc, [
           'a[href*="/marketplace/profile/"] span',
           '[role="main"] a span',
-        ]);
-        const locationText = findTextByPattern(doc.body, /(ships to you|local pickup|miles away|\b[A-Z][a-z]+,\s?[A-Z]{2}\b)/i);
-        const condition = findCondition(doc.body);
+        ]));
+        const locationText = extractLocationText(mainRoot || doc.body);
+        const condition = findCondition(mainRoot || doc.body);
         const combinedText = `${title || ''} ${description || ''}`.trim();
         const moneyHints = extractMoneyHints(description);
         const descriptionPriceHint = moneyHints.length ? moneyHints[0] : null;
@@ -41,7 +42,7 @@
           bestOfferDetected: /\bbest offer\b|\boffer\b/i.test(combinedText),
           placeholderPriceFlag: isFacebookPlaceholderPrice(listedPrice, combinedText),
           notes: [
-            'Facebook extraction uses DOM/meta heuristics and may need selector tuning.',
+            'Facebook extraction prefers main-content and metadata heuristics before broad text fallbacks.',
             'Description money hints are captured when dollar amounts appear in the description.',
           ],
         };
@@ -68,15 +69,20 @@
     return '';
   }
 
-  function extractDescription(doc) {
+  function findMainRoot(doc) {
+    return doc.querySelector('[role="main"]') || doc.querySelector('main') || doc.body;
+  }
+
+  function extractDescription(doc, root) {
     const metaDescription = firstText(doc, ['meta[property="og:description"]', 'meta[name="description"]'], 'content');
-    if (metaDescription) return metaDescription;
+    if (isUsefulDescription(metaDescription)) return metaDescription;
 
-    const candidates = Array.from(doc.querySelectorAll('div, span'))
+    const scopedRoot = root || doc.body;
+    const candidates = Array.from(scopedRoot.querySelectorAll('div, span'))
       .map((node) => cleanText(node.textContent))
-      .filter((text) => text && text.length > 60 && text.length < 1200);
+      .filter((text) => isUsefulDescription(text));
 
-    return candidates.find((text) => !/^\$\d/.test(text)) || '';
+    return candidates[0] || '';
   }
 
   function extractPrice(doc) {
@@ -103,8 +109,13 @@
 
   function findCondition(root) {
     const text = cleanText(root?.textContent || '');
-    const match = text.match(/\b(new|used - like new|used - good|used - fair|used)\b/i);
+    const match = text.match(/\b(new|used - like new|used - good|used - fair|used|refurbished)\b/i);
     return match ? match[1] : '';
+  }
+
+  function extractLocationText(root) {
+    const direct = findTextByPattern(root, /(ships to you|local pickup|\d+\s+miles away|\b[A-Z][a-z]+,\s?[A-Z]{2}\b|\b[A-Z][a-z]+,\s?[A-Z][a-z]+\b)/i);
+    return stripBoilerplateLocation(direct);
   }
 
   function findTextByPattern(root, pattern) {
@@ -120,6 +131,33 @@
 
   function isFacebookPlaceholderPrice(price, text) {
     return Number(price) === 1 || /\bfree\b|\$1\b|\b1\$/i.test(String(text || ''));
+  }
+
+  function normalizeFacebookTitle(title) {
+    return cleanText(String(title || '')
+      .replace(/\s*\|\s*Facebook.*$/i, '')
+      .replace(/\s*Marketplace\s*-\s*/i, ''));
+  }
+
+  function normalizeSellerName(value) {
+    const text = cleanText(value);
+    if (!text || /marketplace|facebook|message/i.test(text)) return '';
+    return text;
+  }
+
+  function isUsefulDescription(text) {
+    const value = cleanText(text);
+    if (!value) return false;
+    if (value.length < 40 || value.length > 1200) return false;
+    if (/^\$\d/.test(value)) return false;
+    if (/facebook|marketplace|messenger|log in|see more|send seller a message/i.test(value)) return false;
+    return true;
+  }
+
+  function stripBoilerplateLocation(text) {
+    const value = cleanText(text);
+    if (/facebook|marketplace|log in|share/i.test(value)) return '';
+    return value;
   }
 
   function cleanText(value) {

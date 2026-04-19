@@ -103,7 +103,7 @@ That approach is safer for extension UX and easier to reason about than hidden b
 - eBay buying options / seller feedback
 
 ## Notes
-- Facebook Marketplace extraction uses heuristics and will need selector maintenance as Facebook changes markup.
+- Facebook Marketplace extraction now prefers main-content and metadata heuristics before broad text fallbacks, but it will still need selector maintenance as Facebook changes markup.
 - eBay Browse API requires an OAuth application token, but token minting is intentionally left outside the extension because embedding client-secret-based auth in frontend code is unsafe.
 - This scaffold stores popup inputs, preferences, consent state, and eBay token/config in extension storage.
 - Tax calculation should use two modes: parsed from page when available, otherwise estimated from a default rate or a state-based rate when the user provides a state.
@@ -111,7 +111,7 @@ That approach is safer for extension UX and easier to reason about than hidden b
 - After search, the extension enriches the top eBay matches with Browse `getItem` details for better shipping/condition/seller signals.
 
 ## Next Build Steps
-1. Tune Facebook listing extraction selectors against real Facebook Marketplace pages.
+1. Tune Facebook listing extraction selectors against more real Facebook Marketplace page variants.
 2. Add smarter query normalization for model/variant-heavy titles.
 3. Expand eBay Browse API request filters and item-detail enrichment.
 4. Add Firefox-targeted testing and manifest validation.
