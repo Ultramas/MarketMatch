@@ -170,12 +170,6 @@
     return pickBestCandidate(candidates, scoreLocationCandidate) || '';
   }
 
-  function findTextByPattern(root, pattern) {
-    const text = cleanText(root?.textContent || '');
-    const match = text.match(pattern);
-    return match ? match[0] : '';
-  }
-
   function extractMoneyHints(text) {
     const matches = String(text || '').match(/(?:[A-Z]{1,3}\s*)?\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|(?:[A-Z]{1,3}\s*)?\$\s?\d+(?:\.\d{1,2})?/g) || [];
     return matches.map((value) => Number(value.replace(/[^\d.]/g, ''))).filter(Number.isFinite);
