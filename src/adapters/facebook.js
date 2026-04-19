@@ -146,21 +146,23 @@
   }
 
   function extractPrice(doc, root) {
-    const explicitCandidates = collectCandidates([
-      ...selectorsToCandidates(doc, [
-        ['meta[property="product:price:amount"]', 'content'],
-        ['meta[name="product:price:amount"]', 'content'],
-      ]),
-      ...collectLabeledTextCandidates(root, [/price/i], 8),
-      ...collectTextCandidates(root, 'span, div, strong', 80),
+    const metadataCandidate = pickBestPriceCandidate(
+      buildPriceCandidates(
+        selectorsToCandidates(doc, [
+          ['meta[property="product:price:amount"]', 'content'],
+          ['meta[name="product:price:amount"]', 'content'],
+        ]),
+        'meta'
+      )
+    );
+    if (metadataCandidate) return metadataCandidate.price;
+
+    const domCandidate = pickBestPriceCandidate([
+      ...buildPriceCandidates(collectPriceLabeledCandidates(root, 10), 'label'),
+      ...buildPriceCandidates(collectTextCandidates(root, 'span, div, strong', 80), 'text'),
     ]);
 
-    for (const text of explicitCandidates) {
-      const price = parsePrice(text);
-      if (price != null) return price;
-    }
-
-    return null;
+    return domCandidate?.price ?? null;
   }
 
   function extractSellerName(doc, root) {
@@ -191,16 +193,12 @@
   }
 
   function extractLocationText(root) {
-    const candidates = collectCandidates([
-      ...collectLabeledTextCandidates(root, [/location/i, /pickup/i, /ships to you/i], 8),
-      ...collectStructuredTextCandidates(root, '[role="main"] span, [role="main"] div', 180),
-      ...collectTextCandidates(root, 'span, div', 160),
-    ])
-      .map(extractLocationFragment)
-      .map(stripBoilerplateLocation)
-      .filter(isUsefulLocation);
+    const candidate = pickBestLocationCandidate([
+      ...buildLocationCandidates(collectLabeledTextCandidates(root, [/location/i, /pickup/i, /ships to you/i], 8), 'label'),
+      ...buildLocationCandidates(collectStructuredTextCandidates(root, '[role="main"] span, [role="main"] div', 180), 'structured'),
+    ]);
 
-    return pickBestCandidate(candidates, scoreLocationCandidate) || '';
+    return candidate?.text || '';
   }
 
   function extractMoneyHints(text) {
@@ -208,7 +206,13 @@
     return matches.map((value) => Number(value.replace(/[^\d.]/g, ''))).filter(Number.isFinite);
   }
 
-  function parsePrice(text) {
+  function buildPriceCandidates(values, source) {
+    return collectCandidates(values)
+      .map((value) => parsePriceCandidate(value, source))
+      .filter(Boolean);
+  }
+
+  function parsePriceCandidate(text, source) {
     const value = cleanText(text);
     if (!value || /per month|deposit|down payment|financing/i.test(value)) return null;
 
@@ -216,7 +220,64 @@
     if (!match) return null;
 
     const price = Number(match[1].replace(/,/g, ''));
-    return Number.isFinite(price) ? price : null;
+    if (!Number.isFinite(price)) return null;
+
+    return {
+      source,
+      text: value,
+      price,
+    };
+  }
+
+  function pickBestPriceCandidate(candidates) {
+    let best = null;
+    let bestScore = -Infinity;
+
+    for (const candidate of candidates || []) {
+      const score = scorePriceCandidate(candidate);
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+
+    return best;
+  }
+
+  function buildLocationCandidates(values, source) {
+    return collectCandidates(values)
+      .map((value) => parseLocationCandidate(value, source))
+      .filter(Boolean);
+  }
+
+  function parseLocationCandidate(text, source) {
+    const rawText = cleanText(text);
+    if (!rawText) return null;
+
+    const locationText = stripBoilerplateLocation(extractLocationFragment(rawText));
+    if (!isUsefulLocation(locationText)) return null;
+    if (looksLikeGeographicLocation(locationText) && !shouldAcceptGeographicLocation(rawText, locationText, source)) return null;
+
+    return {
+      source,
+      rawText,
+      text: locationText,
+    };
+  }
+
+  function pickBestLocationCandidate(candidates) {
+    let best = null;
+    let bestScore = -Infinity;
+
+    for (const candidate of candidates || []) {
+      const score = scoreLocationCandidate(candidate);
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+
+    return best;
   }
 
   function isFacebookPlaceholderPrice(price, text) {
@@ -421,6 +482,34 @@
     return candidates;
   }
 
+  function collectPriceLabeledCandidates(root, limit = 10) {
+    const nodes = Array.from((root || document.body).querySelectorAll('div, span, strong, h2, h3, a')).slice(0, 220);
+    const candidates = [];
+
+    for (const node of nodes) {
+      const labelText = cleanText(node.textContent);
+      if (!labelText || !/(?:^|\b)(price|asking price|original price|list price|compare at|msrp|retail)(?:\b|:)/i.test(labelText)) continue;
+
+      const nearby = [
+        cleanText(node.nextElementSibling?.textContent),
+        cleanText(node.nextElementSibling?.nextElementSibling?.textContent),
+        cleanText(node.parentElement?.nextElementSibling?.textContent),
+      ].filter(Boolean);
+
+      if (parsePriceCandidate(labelText, 'label')) {
+        candidates.push(labelText);
+      }
+
+      for (const value of nearby) {
+        candidates.push(cleanText(`${labelText} ${value}`));
+      }
+
+      if (candidates.length >= limit) break;
+    }
+
+    return candidates;
+  }
+
   function collectCandidates(values) {
     return [...new Set((values || []).map(cleanText).filter(Boolean))];
   }
@@ -509,28 +598,142 @@
     return score;
   }
 
+  function scorePriceCandidate(candidate = {}) {
+    const value = cleanText(candidate.text);
+    if (!value) return -Infinity;
+
+    let score = 0;
+    if (candidate.source === 'meta') score += 80;
+    if (candidate.source === 'label') score += 45;
+    if (candidate.source === 'text') score += 12;
+
+    if (value.length <= 18) score += 18;
+    else if (value.length <= 40) score += 10;
+    else if (value.length > 120) score -= 20;
+
+    if (/^(?:price|asking price)\b[:\-]?\s*/i.test(value)) score += 16;
+    if (/^(?:[A-Z]{1,3}\s*)?\$\s?\d/.test(value)) score += 12;
+    if (isStandalonePriceText(value)) score += 18;
+
+    const moneyMatches = value.match(/(?:[A-Z]{1,3}\s*)?\$\s?\d/g) || [];
+    if (moneyMatches.length === 1) score += 12;
+    if (moneyMatches.length > 1) score -= 20;
+
+    if (/shipping|delivery|tax|taxes|fee|fees/i.test(value)) score -= 45;
+    if (/original price|list price|compare at|retail|msrp|save\s+\$|\d+%\s+off|discount/i.test(value)) score -= 55;
+    if (/description|seller|location|miles away|pickup|ships to you|local pickup/i.test(value)) score -= 10;
+    if (/was\s+(?:[A-Z]{1,3}\s*)?\$|now\s+(?:[A-Z]{1,3}\s*)?\$/i.test(value)) score -= 12;
+
+    if (candidate.price === 1) score += 8;
+    if (candidate.price > 0 && candidate.price < 100000) score += 4;
+
+    return score;
+  }
+
+  function isStandalonePriceText(value) {
+    return /^(?:(?:price|asking price|list price)\b[:\-]?\s*)?(?:[A-Z]{1,3}\s*)?\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?$/.test(cleanText(value));
+  }
+
   function extractLocationFragment(text) {
     const value = cleanText(text);
     if (!value) return '';
 
-    const match = value.match(/(\d+\s+miles away|[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*,\s?[A-Z]{2}|[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*,\s?[A-Z][A-Za-z-]+(?:\s[A-Z][A-Za-z-]+)*|ships to you|local pickup)/);
-    return match ? cleanText(match[1]) : '';
+    const placePattern = `[A-Z][A-Za-z.'’-]*(?:[-\\s][A-Z][A-Za-z.'’-]*)*`;
+    const regionPattern = `(?:[A-Z]{2,3}|${placePattern}(?:\\s+${placePattern})*)`;
+    const geographicPattern = new RegExp(`(${placePattern},\\s?${regionPattern})(?![A-Za-z])`);
+    const prefixedGeographyPattern = new RegExp(`(?:ships to you|local pickup|pickup in|located in|meet(?:-|\\s)?up in|near)\\s*[·|,:-]?\\s*(${placePattern},\\s?${regionPattern})(?![A-Za-z])`, 'i');
+    const suffixedGeographyPattern = new RegExp(`(${placePattern},\\s?${regionPattern})(?![A-Za-z])\\s*[·|,:-]?\\s*(?:ships to you|local pickup)`, 'i');
+
+    const preferredMatches = [
+      value.match(prefixedGeographyPattern),
+      value.match(suffixedGeographyPattern),
+    ];
+
+    for (const match of preferredMatches) {
+      const fragment = cleanText(match?.[1]);
+      if (looksLikeGeographicLocation(fragment)) return fragment;
+    }
+
+    const plainGeographicFragment = cleanText(value.match(geographicPattern)?.[1]);
+    if (looksLikeGeographicLocation(plainGeographicFragment)) return plainGeographicFragment;
+
+    const distanceMatch = value.match(/(\d+\s+miles away)/i);
+    if (distanceMatch?.[1]) return cleanText(distanceMatch[1]);
+
+    const deliveryModeMatch = value.match(/(ships to you|local pickup)/i);
+    if (deliveryModeMatch?.[1]) return cleanText(deliveryModeMatch[1]);
+
+    return '';
   }
 
   function isUsefulLocation(text) {
     const value = cleanText(text);
     if (!value || value.length > 80) return false;
     if (/facebook|marketplace|share|save|message|log in/i.test(value)) return false;
-    return /ships to you|local pickup|miles away|,/.test(value);
+    if (looksLikeGeographicLocation(value)) return true;
+    return /ships to you|local pickup|miles away/i.test(value);
   }
 
-  function scoreLocationCandidate(value) {
+  function scoreLocationCandidate(candidate = {}) {
+    const value = cleanText(candidate.text);
+    if (!value) return -Infinity;
+    const looksGeographic = looksLikeGeographicLocation(value);
+
     let score = 0;
+    if (candidate.source === 'label') score += 30;
+    if (candidate.source === 'structured') score += 18;
+    if (candidate.source === 'text') score += 8;
+
+    if (looksGeographic) score += 28;
     if (/,[A-Z]{2}\b/.test(value)) score += 16;
+    if (/,[A-Z]{2,3}\b/.test(value)) score += 10;
     if (/,[A-Z][a-z]+/.test(value)) score += 12;
     if (/miles away/i.test(value)) score += 10;
     if (/ships to you|local pickup/i.test(value)) score += 4;
+    if (/ships to you|local pickup/i.test(value) && !looksGeographic) score -= 8;
+
     return score;
+  }
+
+  function looksLikeGeographicLocation(value) {
+    const text = cleanText(value);
+    if (!text || !text.includes(',')) return false;
+
+    const parts = text.split(',').map((part) => cleanText(part)).filter(Boolean);
+    if (parts.length < 2 || parts.length > 3) return false;
+
+    const placePattern = /^[A-Z][A-Za-z.'’-]*(?:[-\s][A-Z][A-Za-z.'’-]*)*$/;
+    const invalidPartPattern = /\b(condition|pickup|shipping|seller|description|details|available|availability|offer|firm|obo|price|marketplace)\b/i;
+    const regionText = parts.slice(1).join(' ');
+
+    if (!parts.every((part) => placePattern.test(part) && !invalidPartPattern.test(part))) return false;
+    if (/^[A-Z]{2,3}$/.test(regionText)) return true;
+    return isKnownRegionName(regionText);
+  }
+
+  function isKnownRegionName(value) {
+    return /^(Alabama|Alaska|Alberta|Arizona|Arkansas|Australia|British Columbia|California|Canada|China|Colorado|Connecticut|Delaware|England|Florida|France|Georgia|Germany|Hawaii|Idaho|Illinois|India|Indiana|Iowa|Ireland|Italy|Japan|Kansas|Kentucky|Louisiana|Maine|Manitoba|Maryland|Massachusetts|Mexico|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Brunswick|New Hampshire|New Jersey|New Mexico|New York|Newfoundland(?: and Labrador)?|North Carolina|North Dakota|Nova Scotia|Ohio|Oklahoma|Ontario|Oregon|Pennsylvania|Prince Edward Island|Quebec|Rhode Island|Saskatchewan|Scotland|South Carolina|South Dakota|Spain|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wales|Wisconsin|Wyoming|Brazil)$/i.test(cleanText(value));
+  }
+
+  function shouldAcceptGeographicLocation(rawText, locationText, source) {
+    const raw = cleanText(rawText);
+    const location = cleanText(locationText);
+    if (!raw || !location) return false;
+
+    if (source === 'label') return true;
+    if (hasExplicitLocationContext(raw)) return true;
+    if (raw === location) return true;
+    if (new RegExp(`^${escapeRegExp(location)}\\s*[·|,:-]\\s*(?:ships to you|local pickup)$`, 'i').test(raw)) return true;
+    if (new RegExp(`^(?:ships to you|local pickup)\\s*[·|,:-]\\s*${escapeRegExp(location)}$`, 'i').test(raw)) return true;
+    return false;
+  }
+
+  function hasExplicitLocationContext(text) {
+    return /\b(location|local pickup|pickup in|located in|ships to you|near|meet(?:-|\s)?up in)\b/i.test(cleanText(text));
+  }
+
+  function escapeRegExp(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   function isUsefulDescription(text) {
