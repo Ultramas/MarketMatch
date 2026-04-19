@@ -12,6 +12,7 @@ const resultsNode = document.getElementById('results');
 const resultsSummaryNode = document.getElementById('resultsSummary');
 const historySummaryNode = document.getElementById('historySummary');
 const statusPillsNode = document.getElementById('statusPills');
+let currentSettings = {};
 
 const FILTER_DEFAULTS = {
   distanceScope: 'any',
@@ -48,6 +49,7 @@ async function bootstrap() {
 
   restoreDraft(draft);
   restoreFilters(filters, settings);
+  currentSettings = settings || {};
   updateConsentUI(consent);
   renderStatusPills(filters, consent);
   renderHistorySummary(history || []);
@@ -152,6 +154,7 @@ async function collectCurrentResults() {
 async function applyFilters() {
   const saved = await getSavedFilters();
   const { settings } = await chrome.storage.local.get(['settings']);
+  currentSettings = settings || {};
   const filters = {
     ...FILTER_DEFAULTS,
     ...(settings ? {
@@ -200,10 +203,12 @@ function renderResultsSummary(results = []) {
     return;
   }
 
-  resultsSummaryNode.innerHTML = results.slice(0, 3).map((result) => `
+  const rankedResults = rankResultsForDisplay(results);
+
+  resultsSummaryNode.innerHTML = rankedResults.slice(0, 3).map((result) => `
     <div class="miniItem">
       <strong>${escapeHtml(result.title || 'Untitled result')}</strong>
-      <div class="miniMeta">${escapeHtml(result.platform || 'unknown')} · $${Number(result.listedPrice || 0).toFixed(2)} listed</div>
+      <div class="miniMeta">${escapeHtml(result.platform || 'unknown')} · total $${Number(result.totalCost || 0).toFixed(2)} · boost ${Number(result.rankingBoost || 0).toFixed(0)}</div>
     </div>
   `).join('');
 }
@@ -216,7 +221,7 @@ function renderHistorySummary(history = []) {
 
   historySummaryNode.innerHTML = history.slice(0, 4).map((entry) => `
     <div class="miniItem">
-      <strong>${escapeHtml(entry.title || entry.query || 'Untitled action')}</strong>
+      <strong>${escapeHtml(formatHistoryEntry(entry))}</strong>
       <div class="miniMeta">${escapeHtml(entry.platform || 'unknown')} · ${escapeHtml(entry.type || 'event')}</div>
     </div>
   `).join('');
@@ -296,11 +301,40 @@ async function maybeSaveHistory(entry) {
 }
 
 function buildDraftQuery() {
+  const buildQuery = globalThis.MarketMatchLib?.buildQuery;
+
+  if (typeof buildQuery === 'function') {
+    return buildQuery({
+      brand: brandInput.value.trim(),
+      title: titleInput.value.trim(),
+      description: descriptionInput.value.trim(),
+    });
+  }
+
   return [brandInput.value.trim(), titleInput.value.trim(), descriptionInput.value.trim()]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function rankResultsForDisplay(results) {
+  const rankResults = globalThis.MarketMatchLib?.rankResults;
+  if (typeof rankResults !== 'function') {
+    return results;
+  }
+
+  return rankResults(results, {
+    sellerStandingBoost: sellerStandingBoostInput.checked,
+    defaultTaxRate: Number(currentSettings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate ?? 0),
+  });
+}
+
+function formatHistoryEntry(entry) {
+  const formatter = globalThis.MarketMatchLib?.formatHistoryLabel;
+  return typeof formatter === 'function'
+    ? formatter(entry)
+    : (entry?.title || entry?.query || 'Untitled action');
 }
 
 async function getSavedFilters() {
