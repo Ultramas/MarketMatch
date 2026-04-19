@@ -809,6 +809,7 @@ function buildFlags(result) {
   if (Number(result.shipping) === 0) flags.push('Free Shipping');
   if (result.shipping == null) flags.push('Shipping Unknown');
   if (result.sellerStanding) flags.push('Seller Signal');
+  if (Array.isArray(result.variantMismatchSignals) && result.variantMismatchSignals.length) flags.push('Possible Variant Mismatch');
   if (result.locationText) flags.push(result.locationText);
   return flags;
 }

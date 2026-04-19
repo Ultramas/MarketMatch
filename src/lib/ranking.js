@@ -20,9 +20,11 @@
       taxes,
       totalCost,
     });
+    const variantMismatchPenalty = Number(confidence.variantMismatchPenalty || 0);
+    const summarizedComparison = appendVariantMismatchSummary(comparisonSummary, confidence.variantMismatches);
     const rankingBoost = lib.computeRankingBoosts(result, {
       ...options,
-      comparisonSummary,
+      comparisonSummary: summarizedComparison,
     });
 
     return {
@@ -32,9 +34,11 @@
       totalCost,
       matchConfidence: confidence.score,
       matchedTokens: confidence.matchedTokens,
-      comparisonSummary,
+      variantMismatchSignals: confidence.variantMismatches || [],
+      variantMismatchPenalty,
+      comparisonSummary: summarizedComparison,
       rankingBoost,
-      adjustedRankScore: totalCost - rankingBoost - (confidence.score * 0.12),
+      adjustedRankScore: totalCost - rankingBoost - (confidence.score * 0.12) + (variantMismatchPenalty * 0.4),
     };
   };
 
@@ -88,6 +92,22 @@
       shippingComparison: shippingComparison.value,
       highlights: reasons.slice(0, 4),
       mismatches: mismatches.slice(0, 3),
+    };
+  }
+
+  function appendVariantMismatchSummary(summary, variantMismatches = []) {
+    const variantLabels = (variantMismatches || []).map((item) => item?.label).filter(Boolean);
+    if (!variantLabels.length) {
+      return {
+        ...summary,
+        variantMismatches: [],
+      };
+    }
+
+    return {
+      ...summary,
+      variantMismatches: variantLabels,
+      mismatches: [...variantLabels, ...(summary.mismatches || [])].slice(0, 3),
     };
   }
 
