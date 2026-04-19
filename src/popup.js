@@ -207,6 +207,8 @@ async function searchEbayMatches() {
       payload: {
         query,
         ...sourceInput,
+        sellerStandingBoost: sellerStandingBoostInput.checked,
+        sourceListing: activeSourceListing,
         sourcePlatform: 'facebook',
       },
     });
@@ -353,11 +355,11 @@ function renderResultsMeta(queryAttempts = [], selectedQuery = '', matchCount = 
     return;
   }
 
-  const successfulAttempt = queryAttempts.find((attempt) => Number(attempt.returned || 0) > 0);
   const attemptLabel = queryAttempts.length === 1 ? '1 query attempt' : `${queryAttempts.length} query attempts`;
-  const usedQuery = successfulAttempt?.query || selectedQuery || queryAttempts[0]?.query || '';
+  const usedQuery = selectedQuery || queryAttempts[0]?.query || '';
   const countLabel = matchCount == null ? '' : ` · ${matchCount} deduped matches`;
-  resultsMetaNode.textContent = `${attemptLabel}${countLabel}${usedQuery ? ` · using: ${usedQuery}` : ''}`;
+  const queryLabel = queryAttempts.length > 1 ? 'best variant' : 'using';
+  resultsMetaNode.textContent = `${attemptLabel}${countLabel}${usedQuery ? ` · ${queryLabel}: ${usedQuery}` : ''}`;
 }
 
 function renderResultsSummary(results = []) {
@@ -792,6 +794,7 @@ function buildFlags(result) {
   if (Number(result.shipping) === 0) flags.push('Free Shipping');
   if (result.shipping == null) flags.push('Shipping Unknown');
   if (result.sellerStanding) flags.push('Seller Signal');
+  if (Number(result.queryVariantHits || 0) > 1) flags.push(`${Number(result.queryVariantHits)} query hits`);
   if (result.locationText) flags.push(result.locationText);
   return flags;
 }
