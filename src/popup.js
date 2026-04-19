@@ -327,7 +327,6 @@ async function saveConsent(allowed) {
     cookiesPrompted: true,
     cookiesAllowed: allowed,
     historyAllowed: allowed,
-    couponLookupAllowed: false,
   };
 
   await chrome.storage.local.set({ consent });

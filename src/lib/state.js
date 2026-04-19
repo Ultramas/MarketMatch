@@ -29,14 +29,12 @@
     sellerStandingBoost: true,
     userState: lib.DEFAULT_SETTINGS.defaultState,
     defaultTaxRate: lib.DEFAULT_SETTINGS.defaultTaxRate,
-    couponOptIn: false,
   };
 
   lib.DEFAULT_CONSENT = {
     cookiesPrompted: false,
     cookiesAllowed: false,
     historyAllowed: false,
-    couponLookupAllowed: false,
   };
 
   lib.createEmptySessionState = function createEmptySessionState() {

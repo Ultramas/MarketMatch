@@ -21,7 +21,6 @@ const DEFAULT_FILTERS = {
   sellerStandingBoost: true,
   userState: '',
   defaultTaxRate: 0,
-  couponOptIn: false,
   ...(globalThis.MarketMatchLib?.DEFAULT_FILTERS || {}),
 };
 
