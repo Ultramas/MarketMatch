@@ -83,6 +83,9 @@
   }
 
   function extractDescription(doc, root) {
+    const sectionDescription = extractSectionBoundDescription(root);
+    if (isUsefulDescription(sectionDescription)) return sectionDescription;
+
     const labeledDescription = extractInlineLabeledValue(root, /seller'?s description|description/i);
     if (isUsefulDescription(labeledDescription)) return labeledDescription;
 
@@ -110,6 +113,36 @@
     ]);
 
     return pickBestCandidate(candidates, scoreDescriptionCandidate) || '';
+  }
+
+  function extractSectionBoundDescription(root) {
+    const labelPatterns = [/^seller'?s description\b[:\-]?$/i, /^description\b[:\-]?$/i];
+    const boundaryPatterns = [
+      /^condition\b/i,
+      /^seller details?\b/i,
+      /^listed by\b/i,
+      /^availability\b/i,
+      /^location\b/i,
+      /^pickup\b/i,
+      /^shipping\b/i,
+      /^more from this seller\b/i,
+      /^vehicle history report\b/i,
+      /^details\b/i,
+      /^about this vehicle\b/i,
+      /^similar listings?\b/i,
+      /^marketplace\b/i,
+    ];
+    const nodes = Array.from((root || document.body).querySelectorAll('h2, h3, h4, strong, div, span')).slice(0, 280);
+    const candidates = [];
+
+    for (const node of nodes) {
+      if (!isLikelySectionLabelNode(node, labelPatterns)) continue;
+      candidates.push(...collectSectionDescriptionCandidates(node, boundaryPatterns));
+      if (candidates.length >= 18) break;
+    }
+
+    const expandedCandidates = collectCandidates(candidates).flatMap(expandDescriptionCandidates);
+    return pickBestCandidate(expandedCandidates, scoreDescriptionCandidate) || '';
   }
 
   function extractPrice(doc, root) {
@@ -203,6 +236,105 @@
     if (/^(vehicles|cars\s*&\s*trucks|beds\s*&\s*bed\s*frames|property rentals|apparel|classifieds|electronics|entertainment|family|free stuff|garden & outdoor|hobbies|home goods|home improvement supplies|home sales|musical instruments|office supplies|pet supplies|sporting goods|toys & games)$/i.test(text)) return '';
     if (text.length > 60) return '';
     return text;
+  }
+
+  function isLikelySectionLabelNode(node, labelPatterns) {
+    const text = cleanText(node?.textContent);
+    if (!text || text.length > 80) return false;
+    return labelPatterns.some((pattern) => pattern.test(text));
+  }
+
+  function collectSectionDescriptionCandidates(labelNode, boundaryPatterns) {
+    const candidates = [];
+    const strippedLabelText = stripSectionLabel(labelNode?.textContent);
+    if (strippedLabelText) candidates.push(strippedLabelText);
+
+    const anchors = [
+      labelNode,
+      labelNode?.parentElement,
+    ].filter((anchor, index, all) => anchor && all.indexOf(anchor) === index)
+      .filter((anchor) => anchor === labelNode || isLikelySectionAnchorNode(anchor, labelNode));
+
+    for (const anchor of anchors) {
+      candidates.push(...collectSectionSiblingCandidates(anchor, boundaryPatterns));
+    }
+
+    return candidates;
+  }
+
+  function collectSectionSiblingCandidates(anchorNode, boundaryPatterns) {
+    const chunks = [];
+    let current = anchorNode?.nextElementSibling || null;
+    let steps = 0;
+
+    while (current && steps < 8) {
+      if (isLikelySectionBoundaryNode(current, boundaryPatterns)) break;
+
+      const { text, hitBoundary } = extractTextBeforeBoundary(current, boundaryPatterns);
+      if (text && text.length <= 900) {
+        chunks.push(text);
+      }
+      if (hitBoundary) break;
+
+      current = current.nextElementSibling;
+      steps += 1;
+    }
+
+    const candidates = [...chunks];
+    let combined = '';
+    for (const chunk of chunks.slice(0, 4)) {
+      combined = cleanText(`${combined} ${chunk}`);
+      if (combined) candidates.push(combined);
+    }
+
+    return candidates;
+  }
+
+  function isLikelySectionAnchorNode(anchorNode, labelNode) {
+    if (!anchorNode || !labelNode || !anchorNode.contains(labelNode)) return false;
+    const text = cleanText(anchorNode.textContent);
+    if (!text || text.length > 500) return false;
+    const childCount = anchorNode.children.length;
+    return childCount >= 2 && childCount <= 6;
+  }
+
+  function extractTextBeforeBoundary(node, boundaryPatterns) {
+    const doc = node?.ownerDocument || document;
+    const view = doc.defaultView || globalThis;
+    const walker = doc.createTreeWalker(
+      node,
+      (view.NodeFilter?.SHOW_ELEMENT || 1) | (view.NodeFilter?.SHOW_TEXT || 4)
+    );
+    const chunks = [];
+    let hitBoundary = false;
+
+    while (walker.nextNode()) {
+      const current = walker.currentNode;
+      if (current.nodeType === 1 && isLikelySectionBoundaryNode(current, boundaryPatterns)) {
+        hitBoundary = true;
+        break;
+      }
+
+      if (current.nodeType === 3) {
+        const text = cleanText(current.textContent);
+        if (text) chunks.push(text);
+      }
+    }
+
+    return {
+      text: cleanText(chunks.join(' ')),
+      hitBoundary,
+    };
+  }
+
+  function isLikelySectionBoundaryNode(node, boundaryPatterns) {
+    const text = cleanText(node?.textContent);
+    if (!text || text.length > 120) return false;
+    return boundaryPatterns.some((pattern) => pattern.test(text));
+  }
+
+  function stripSectionLabel(text) {
+    return cleanText(String(text || '').replace(/^(seller'?s description|description)\b[:\-]?\s*/i, ''));
   }
 
   function extractInlineLabeledValue(root, pattern) {
