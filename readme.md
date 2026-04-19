@@ -48,6 +48,7 @@ docs/
   IMPLEMENTATION_PLAN.md
 src/
   adapters/
+    registry.js
     craigslist.js
     ebay.js
     facebook.js
@@ -116,10 +117,9 @@ That approach is safer for extension UX and easier to reason about than hidden b
 2. Implement query normalization in `src/lib/normalize.js`.
 3. Implement filtering/ranking in `src/lib/filters.js` and `src/lib/ranking.js`.
 4. Add Firefox-targeted testing and manifest validation.
-5. Wire `src/content.js` through the adapter layer so the runtime matches the documented structure.
-6. Apply options defaults to ranking/filter execution, not just popup restoration.
-7. Add real popup rendering for ranked results instead of shell cards.
-8. Add optional coupon-provider adapters.
+5. Apply options defaults to ranking/filter execution, not just popup restoration.
+6. Add real popup rendering for ranked results instead of shell cards.
+7. Add optional coupon-provider adapters.
 
 ## Chosen Defaults
 - Prioritize Firefox first.

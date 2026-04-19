@@ -36,6 +36,10 @@
         "https://*.craigslist.org/*"
       ],
       "js": [
+        "src/adapters/registry.js",
+        "src/adapters/ebay.js",
+        "src/adapters/facebook.js",
+        "src/adapters/craigslist.js",
         "src/content.js"
       ],
       "run_at": "document_idle"

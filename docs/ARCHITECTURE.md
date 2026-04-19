@@ -19,3 +19,8 @@ Keep scraping concerns, normalization, ranking, persistence, and UI separate so 
 - Ranking rules and hard filters will evolve independently.
 - Coupon search is optional and should remain detachable.
 - History/consent behavior should stay isolated from scraping logic.
+
+## Current Runtime Wiring
+- `manifest.json` loads `src/adapters/registry.js`, then each platform adapter, then `src/content.js` for supported marketplace pages.
+- `src/content.js` now dispatches capture/result collection through the registered adapter for the active hostname.
+- Adapters still return placeholder payloads, but the runtime shape now matches the documented layering.
