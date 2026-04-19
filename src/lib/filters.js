@@ -32,11 +32,34 @@
     return Number(effectivePrice || 0) * rate;
   };
 
-  lib.computeRankingBoosts = function computeRankingBoosts(result, { sellerStandingBoost = true, couponSavings = 0 } = {}) {
+  lib.computeRankingBoosts = function computeRankingBoosts(result, { sellerStandingBoost = true, couponSavings = 0, comparisonSummary = null } = {}) {
     let boost = 0;
 
     if (sellerStandingBoost && result?.sellerStanding) {
       boost += 10;
+    }
+
+    if (comparisonSummary) {
+      if (comparisonSummary.priceDelta != null) {
+        if (comparisonSummary.priceDelta < 0) boost += Math.min(18, Math.abs(comparisonSummary.priceDelta) * 0.08);
+        if (comparisonSummary.priceDelta > 75) boost -= Math.min(20, comparisonSummary.priceDelta * 0.05);
+      }
+
+      if (comparisonSummary.conditionComparison === 'same') boost += 8;
+      if (comparisonSummary.conditionComparison === 'better') boost += 10;
+      if (comparisonSummary.conditionComparison === 'worse') boost -= 12;
+
+      if (comparisonSummary.locationComparison === 'same-city') boost += 8;
+      else if (comparisonSummary.locationComparison === 'same-state') boost += 5;
+      else if (comparisonSummary.locationComparison === 'same-country') boost += 2;
+      else if (comparisonSummary.locationComparison === 'different') boost -= 6;
+
+      if (comparisonSummary.shippingComparison === 'free') boost += 8;
+      if (comparisonSummary.shippingComparison === 'unknown') boost -= 6;
+      if (comparisonSummary.shippingComparison === 'high') boost -= 8;
+
+      if (comparisonSummary.offerComparison === 'both') boost += 3;
+      if (comparisonSummary.offerComparison === 'source-only') boost -= 3;
     }
 
     if (couponSavings > 0) {

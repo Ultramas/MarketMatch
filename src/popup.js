@@ -284,9 +284,13 @@ function renderResultsSummary(results = []) {
     return;
   }
 
-  resultsSummaryNode.innerHTML = rankedResults.slice(0, 5).map((result) => {
+  resultsSummaryNode.innerHTML = rankedResults.slice(0, 5).map((result, index) => {
     const flags = buildFlags(result);
     const searchUrl = buildEbaySearchUrl(result.title || '');
+    const comparisonSummary = result.comparisonSummary || {};
+    const highlights = Array.isArray(comparisonSummary.highlights) ? comparisonSummary.highlights : [];
+    const mismatches = Array.isArray(comparisonSummary.mismatches) ? comparisonSummary.mismatches : [];
+    const priceDelta = formatPriceDelta(comparisonSummary.priceDelta);
     return `
       <div class="matchCard">
         <div class="matchHeader">
@@ -295,6 +299,7 @@ function renderResultsSummary(results = []) {
             <div class="miniMeta">${escapeHtml(result.matchReason || result.condition || 'eBay Browse API match')}</div>
           </div>
           <div class="priceBlock">
+            ${index === 0 ? '<div class="flag">Best Comparable</div>' : ''}
             <div class="miniMeta">Landed</div>
             <strong>$${Number(result.totalCost || 0).toFixed(2)}</strong>
           </div>
@@ -314,6 +319,9 @@ function renderResultsSummary(results = []) {
             <div class="metricValue">${Number(result.matchConfidence || 0).toFixed(0)}</div>
           </div>
         </div>
+        ${priceDelta ? `<div class="miniMeta">${escapeHtml(priceDelta)}</div>` : ''}
+        ${highlights.length ? `<div class="flagRow">${highlights.map((item) => `<span class="flag">${escapeHtml(item)}</span>`).join('')}</div>` : ''}
+        ${mismatches.length ? `<div class="miniMeta">Watchouts: ${escapeHtml(mismatches.join(' · '))}</div>` : ''}
         <div class="miniMeta">Item $${Number(result.listedPrice || 0).toFixed(2)} · Shipping ${formatCurrencyOrUnknown(result.shipping)} · Tax $${Number(result.taxes || 0).toFixed(2)}</div>
         <div class="miniMeta">Seller ${escapeHtml(result.sellerName || 'unknown')} ${result.sellerStanding ? `· ${escapeHtml(result.sellerStanding)}` : ''}</div>
         <div class="miniMeta">${escapeHtml(result.locationText || 'Location unavailable')}${Array.isArray(result.buyingOptions) && result.buyingOptions.length ? ` · ${escapeHtml(result.buyingOptions.join(', '))}` : ''}</div>
@@ -505,6 +513,14 @@ function buildFlags(result) {
   return flags;
 }
 
+function formatPriceDelta(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '';
+  const delta = Number(value);
+  if (delta === 0) return 'Total cost is about even with the source listing';
+  if (delta < 0) return `Total cost is about $${Math.abs(delta).toFixed(2)} below the source listing`;
+  return `Total cost is about $${delta.toFixed(2)} above the source listing`;
+}
+
 function formatHistoryEntry(entry) {
   const formatter = globalThis.MarketMatchLib?.formatHistoryLabel;
   return typeof formatter === 'function'
@@ -532,7 +548,11 @@ function readCurrentSourceListing() {
   return currentSourceListing || {
     title: titleInput.value.trim(),
     description: descriptionInput.value.trim(),
+    listedPrice: null,
+    descriptionPriceHint: null,
+    condition: '',
     locationText: '',
+    bestOfferDetected: false,
   };
 }
 
