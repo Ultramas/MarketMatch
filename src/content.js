@@ -4,16 +4,11 @@
       sendResponse(captureCurrentListing());
       return;
     }
-
-    if (message?.type === 'COLLECT_RESULTS') {
-      sendResponse(collectCurrentResults());
-      return;
-    }
   });
 })();
 
 function captureCurrentListing() {
-  const platform = detectPlatform(window.location.hostname);
+  const platform = 'facebook';
   const adapter = globalThis.MarketMatchAdapters?.getAdapter(platform);
 
   if (!adapter) {
@@ -25,33 +20,6 @@ function captureCurrentListing() {
     document,
     location: window.location,
   });
-}
-
-function collectCurrentResults() {
-  const platform = detectPlatform(window.location.hostname);
-  const adapter = globalThis.MarketMatchAdapters?.getAdapter(platform);
-
-  if (!adapter) {
-    return {
-      platform,
-      supported: false,
-      results: [],
-      notes: [`No adapter registered for ${platform}.`],
-    };
-  }
-
-  return adapter.collectResults({
-    url: window.location.href,
-    document,
-    location: window.location,
-  });
-}
-
-function detectPlatform(hostname) {
-  if (hostname.includes('ebay.com')) return 'ebay';
-  if (hostname.includes('facebook.com')) return 'facebook';
-  if (hostname.includes('craigslist.org')) return 'craigslist';
-  return 'unknown';
 }
 
 function createUnsupportedResponse(platform, notes = []) {
