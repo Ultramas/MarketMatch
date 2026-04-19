@@ -240,7 +240,22 @@ function attachQueryVariant(match, query) {
 }
 
 function buildSearchMatchKey(match = {}) {
-  return match.id || match.url || `${match.title}-${match.listedPrice}`;
+  if (match.id) return match.id;
+  if (match.url) return match.url;
+
+  const fallbackParts = [
+    String(match.title || '').trim().toLowerCase(),
+    Number.isFinite(Number(match.listedPrice)) ? Number(match.listedPrice).toFixed(2) : '',
+    String(match.sellerName || '').trim().toLowerCase(),
+    String(match.locationText || '').trim().toLowerCase(),
+  ].filter(Boolean);
+
+  return fallbackParts.join('|') || JSON.stringify({
+    title: match.title || '',
+    listedPrice: match.listedPrice ?? null,
+    sellerName: match.sellerName || '',
+    locationText: match.locationText || '',
+  });
 }
 
 function mergeSearchMatches(existing, incoming, context) {
