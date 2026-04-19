@@ -11,6 +11,35 @@
     return lib.normalizeSearchInput({ brand, title, description }).query;
   };
 
+  lib.buildQueryVariants = function buildQueryVariants({ brand, title, description }) {
+    const normalized = lib.normalizeSearchInput({ brand, title, description });
+    const titleFocused = dedupe([
+      ...normalized.brandTokens,
+      ...extractIdentifierTokens(normalized.titleTokens),
+      ...normalized.titleTokens.slice(0, 8),
+    ]).slice(0, 10);
+    const balanced = dedupe([
+      ...normalized.brandTokens,
+      ...extractStrongTokens(normalized.titleTokens),
+      ...extractStrongTokens(normalized.descriptionTokens).slice(0, 4),
+    ]).slice(0, 12);
+    const broad = dedupe([
+      ...normalized.brandTokens,
+      ...normalized.titleTokens.slice(0, 6),
+      ...normalized.descriptionTokens.slice(0, 4),
+    ]).slice(0, 12);
+
+    return {
+      ...normalized,
+      queries: dedupe([
+        normalized.query,
+        titleFocused.join(' ').trim(),
+        balanced.join(' ').trim(),
+        broad.join(' ').trim(),
+      ]).filter(Boolean),
+    };
+  };
+
   lib.normalizeSearchInput = function normalizeSearchInput({ brand, title, description }) {
     const cleanedBrand = cleanFragment(brand);
     const cleanedTitle = cleanFragment(title);
@@ -93,6 +122,10 @@
 
   function extractStrongTokens(tokens) {
     return tokens.filter((token) => /\d/.test(token) || token.length >= 4);
+  }
+
+  function extractIdentifierTokens(tokens) {
+    return tokens.filter((token) => /\d/.test(token) || /-/.test(token) || token.length >= 5);
   }
 
   function dedupe(values) {

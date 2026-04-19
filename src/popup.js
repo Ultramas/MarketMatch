@@ -8,6 +8,7 @@ const brandRequiredInput = document.getElementById('brandRequired');
 const sellerStandingBoostInput = document.getElementById('sellerStandingBoost');
 const consentCard = document.getElementById('consentCard');
 const resultsNode = document.getElementById('results');
+const resultsMetaNode = document.getElementById('resultsMeta');
 const resultsSummaryNode = document.getElementById('resultsSummary');
 const historySummaryNode = document.getElementById('historySummary');
 const statusPillsNode = document.getElementById('statusPills');
@@ -58,6 +59,7 @@ async function bootstrap() {
   renderStatusPills(filters, consent, settings);
   renderHistorySummary(history || []);
   renderResultsSummary(results || []);
+  renderResultsMeta();
   renderSourceListingSummary(sourceListing);
   renderApiStatus(settings);
 
@@ -102,6 +104,7 @@ async function captureCurrentListing() {
   await chrome.storage.local.set({ sourceListing: response, results: [] });
   currentSourceListing = response;
   renderSourceListingSummary(response);
+  renderResultsMeta();
   renderResultsSummary([]);
   await persistDraft();
   await maybeSaveHistory({
@@ -116,6 +119,7 @@ async function captureCurrentListing() {
 }
 
 async function searchEbayMatches() {
+  const sourceInput = buildSourceInput();
   const query = buildDraftQuery();
   if (!titleInput.value.trim() || !descriptionInput.value.trim()) {
     render({ error: 'Title and description are both required before searching eBay.' });
@@ -124,6 +128,7 @@ async function searchEbayMatches() {
 
   await persistDraft();
   await chrome.storage.local.set({ results: [] });
+  renderResultsMeta();
   renderResultsSummary([]);
 
   let response;
@@ -132,6 +137,7 @@ async function searchEbayMatches() {
       type: 'SEARCH_EBAY_LISTINGS',
       payload: {
         query,
+        ...sourceInput,
         sourcePlatform: 'facebook',
       },
     });
@@ -147,17 +153,19 @@ async function searchEbayMatches() {
 
   const matches = Array.isArray(response.matches) ? response.matches : [];
   await chrome.storage.local.set({ results: matches });
+  renderResultsMeta(response.queryAttempts || [], response.query || query, matches.length);
   renderResultsSummary(matches);
   await maybeSaveHistory({
     type: 'search',
     platform: 'ebay',
     title: titleInput.value.trim(),
-    query,
+    query: response.query || query,
     url: response.requestMeta?.href || '',
   });
   render({
     ok: true,
     query: response.query,
+    queryAttempts: response.queryAttempts || [],
     totalMatches: matches.length,
     requestMeta: response.requestMeta,
   });
@@ -206,6 +214,7 @@ async function resetSession() {
   currentSourceListing = null;
   restoreDraft(emptyState.draft);
   renderSourceListingSummary(null);
+  renderResultsMeta();
   renderResultsSummary([]);
   render({ message: 'Cleared Facebook source listing and eBay matches.' });
 }
@@ -246,6 +255,21 @@ function renderApiStatus(settings = {}) {
   apiStatusNode.textContent = settings?.ebayApplicationToken
     ? `eBay token configured for ${settings.ebayMarketplaceId || 'EBAY_US'}${settings.endUserZip ? ` · ZIP ${settings.endUserZip}` : ''}`
     : 'No eBay token configured yet. Add one in Options before searching.';
+}
+
+function renderResultsMeta(queryAttempts = [], selectedQuery = '', matchCount = null) {
+  if (!resultsMetaNode) return;
+
+  if (!queryAttempts.length) {
+    resultsMetaNode.textContent = '';
+    return;
+  }
+
+  const successfulAttempt = queryAttempts.find((attempt) => Number(attempt.returned || 0) > 0);
+  const attemptLabel = queryAttempts.length === 1 ? '1 query attempt' : `${queryAttempts.length} query attempts`;
+  const usedQuery = successfulAttempt?.query || selectedQuery || queryAttempts[0]?.query || '';
+  const countLabel = matchCount == null ? '' : ` · ${matchCount} deduped matches`;
+  resultsMetaNode.textContent = `${attemptLabel}${countLabel}${usedQuery ? ` · using: ${usedQuery}` : ''}`;
 }
 
 function renderResultsSummary(results = []) {
@@ -383,18 +407,22 @@ function restoreFilters(filters = {}, settings = {}) {
 function buildDraftQuery() {
   const normalizeSearchInput = globalThis.MarketMatchLib?.normalizeSearchInput;
   if (typeof normalizeSearchInput === 'function') {
-    return normalizeSearchInput({
-      brand: brandInput.value.trim(),
-      title: titleInput.value.trim(),
-      description: descriptionInput.value.trim(),
-    }).query;
+    return normalizeSearchInput(buildSourceInput()).query;
   }
 
-  return [brandInput.value.trim(), titleInput.value.trim(), descriptionInput.value.trim()]
+  return Object.values(buildSourceInput())
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function buildSourceInput() {
+  return {
+    brand: brandInput.value.trim(),
+    title: titleInput.value.trim(),
+    description: descriptionInput.value.trim(),
+  };
 }
 
 function rankResultsForDisplay(results) {

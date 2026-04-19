@@ -1,6 +1,7 @@
 if (typeof importScripts === 'function') {
   importScripts(
     'lib/state.js',
+    'lib/normalize.js',
     'lib/ebay-api.js',
     'adapters/registry.js',
     'adapters/facebook.js'
@@ -81,13 +82,25 @@ async function searchEbayListings(payload = {}) {
   const { settings } = await chrome.storage.local.get(['settings']);
   const searchEbayBrowse = globalThis.MarketMatchLib?.searchEbayBrowse;
   const enrichEbayMatches = globalThis.MarketMatchLib?.enrichEbayMatches;
+  const buildQueryVariants = globalThis.MarketMatchLib?.buildQueryVariants;
 
   if (typeof searchEbayBrowse !== 'function') {
     return { ok: false, error: 'eBay API helper is not loaded.' };
   }
 
-  const query = String(payload.query || '').trim();
-  if (!query) {
+  const sourceInput = {
+    brand: String(payload.brand || '').trim(),
+    title: String(payload.title || '').trim(),
+    description: String(payload.description || '').trim(),
+  };
+
+  const candidateQueries = buildCandidateQueries({
+    payloadQuery: payload.query,
+    sourceInput,
+    buildQueryVariants,
+  });
+
+  if (!candidateQueries.length) {
     return { ok: false, error: 'Search query is required.' };
   }
 
@@ -98,31 +111,80 @@ async function searchEbayListings(payload = {}) {
     };
   }
 
-  const response = await searchEbayBrowse({
-    query,
-    token: settings.ebayApplicationToken,
-    marketplaceId: settings.ebayMarketplaceId || 'EBAY_US',
-    limit: Number(settings.ebayLimit || 10),
-    endUserZip: settings.endUserZip || '',
-  });
+  const searchLimit = Number(settings.ebayLimit || 10);
+  const searchAttempts = [];
+  const matchMap = new Map();
+  let lastResponse = null;
+
+  for (const candidateQuery of candidateQueries.slice(0, 3)) {
+    const response = await searchEbayBrowse({
+      query: candidateQuery,
+      token: settings.ebayApplicationToken,
+      marketplaceId: settings.ebayMarketplaceId || 'EBAY_US',
+      limit: searchLimit,
+      endUserZip: settings.endUserZip || '',
+    });
+
+    lastResponse = response;
+    searchAttempts.push({
+      query: candidateQuery,
+      returned: Array.isArray(response.matches) ? response.matches.length : 0,
+      total: Number(response.requestMeta?.total || 0),
+    });
+
+    for (const match of (response.matches || [])) {
+      const key = match.id || match.url || `${match.title}-${match.listedPrice}`;
+      if (!matchMap.has(key)) {
+        matchMap.set(key, match);
+      }
+    }
+
+    if (matchMap.size >= Math.min(searchLimit, 5)) {
+      break;
+    }
+  }
+
+  const query = searchAttempts.find((attempt) => attempt.returned > 0)?.query || candidateQueries[0];
+  const dedupedMatches = Array.from(matchMap.values()).slice(0, Math.max(1, searchLimit));
 
   const matches = typeof enrichEbayMatches === 'function'
     ? await enrichEbayMatches({
-      matches: response.matches || [],
+      matches: dedupedMatches,
       token: settings.ebayApplicationToken,
       marketplaceId: settings.ebayMarketplaceId || 'EBAY_US',
       endUserZip: settings.endUserZip || '',
       topN: 3,
     })
-    : (response.matches || []);
+    : dedupedMatches;
 
   return {
     ok: true,
     query,
     sourcePlatform: payload.sourcePlatform || 'facebook',
     matches,
-    requestMeta: response.requestMeta || {},
+    queryAttempts: searchAttempts,
+    requestMeta: {
+      ...(lastResponse?.requestMeta || {}),
+      attemptedQueries: searchAttempts,
+      selectedQuery: query,
+      dedupedCount: matches.length,
+    },
   };
+}
+
+function buildCandidateQueries({ payloadQuery, sourceInput, buildQueryVariants }) {
+  const queries = [];
+  const initialQuery = String(payloadQuery || '').trim();
+  if (initialQuery) {
+    queries.push(initialQuery);
+  }
+
+  if (typeof buildQueryVariants === 'function') {
+    const variants = buildQueryVariants(sourceInput || {});
+    queries.push(...(variants?.queries || []));
+  }
+
+  return [...new Set(queries.map((query) => String(query || '').replace(/\s+/g, ' ').trim()).filter(Boolean))];
 }
 
 async function saveHistoryEntry(entry) {
