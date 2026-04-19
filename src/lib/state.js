@@ -31,6 +31,7 @@
       filters: { ...lib.DEFAULT_FILTERS },
       consent: { ...lib.DEFAULT_CONSENT },
       sourceListing: null,
+      lastSearchSourceSignature: '',
       results: [],
       history: [],
     };

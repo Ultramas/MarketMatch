@@ -17,6 +17,12 @@ const apiStatusNode = document.getElementById('apiStatus');
 
 let currentSettings = {};
 let currentSourceListing = null;
+let currentResults = [];
+let sourceSyncTimer = null;
+let lastSearchSourceSignature = '';
+let activeSearchRequestId = 0;
+let sourceSyncRevision = 0;
+let activeSourceSyncPromise = Promise.resolve();
 
 const FILTER_DEFAULTS = {
   distanceScope: 'any',
@@ -37,15 +43,19 @@ document.getElementById('applyFilters').addEventListener('click', applyFilters);
 document.getElementById('resetSession').addEventListener('click', resetSession);
 document.getElementById('allowCookies').addEventListener('click', () => saveConsent(true));
 document.getElementById('declineCookies').addEventListener('click', () => saveConsent(false));
+brandInput.addEventListener('input', scheduleActiveSourceSync);
+titleInput.addEventListener('input', scheduleActiveSourceSync);
+descriptionInput.addEventListener('input', scheduleActiveSourceSync);
 
 bootstrap();
 
 async function bootstrap() {
-  const { draft, filters, consent, history, results, sourceListing, settings } = await chrome.storage.local.get([
+  const { draft, filters, consent, history, lastSearchSourceSignature: savedSearchSourceSignature, results, sourceListing, settings } = await chrome.storage.local.get([
     'draft',
     'filters',
     'consent',
     'history',
+    'lastSearchSourceSignature',
     'results',
     'sourceListing',
     'settings',
@@ -53,22 +63,34 @@ async function bootstrap() {
 
   currentSettings = settings || {};
   currentSourceListing = sourceListing || null;
+  currentResults = results || [];
   restoreDraft(draft);
+  lastSearchSourceSignature = String(savedSearchSourceSignature || '');
   restoreFilters(filters, settings);
   updateConsentUI(consent);
+  let renderedSourceChangeWarning = false;
+  const activeSourceSignature = computeSourceSignature(readCurrentSourceListing());
+  if (lastSearchSourceSignature && activeSourceSignature !== lastSearchSourceSignature) {
+    currentResults = [];
+    lastSearchSourceSignature = '';
+    await chrome.storage.local.set({ results: [], lastSearchSourceSignature: '' });
+    render({ message: 'Source changed since the last search. Re-run search for fresh matches.' });
+    renderedSourceChangeWarning = true;
+  }
   renderStatusPills(filters, consent, settings);
   renderHistorySummary(history || []);
-  renderResultsSummary(results || []);
+  renderResultsSummary(currentResults);
   renderResultsMeta();
-  renderSourceListingSummary(sourceListing);
+  renderSourceListingSummary(readCurrentSourceListing());
   renderApiStatus(settings);
 
-  if (history?.length) {
+  if (history?.length && !renderedSourceChangeWarning) {
     render({ recentHistory: history.slice(0, 5) });
   }
 }
 
 async function captureCurrentListing() {
+  await cancelPendingSourceSync();
   const tab = await getActiveTab();
   if (detectPlatformFromUrl(tab?.url) !== 'facebook') {
     render({ error: 'Open a Facebook Marketplace listing page first.' });
@@ -83,7 +105,42 @@ async function captureCurrentListing() {
     return;
   }
 
+  const capturedSource = buildCapturedSourceListing(response);
+  const sameCapturedListing = isSameCapturedListing(currentSourceListing, capturedSource, tab?.url || '');
+  const previousSignature = computeSourceSignature(readCurrentSourceListing());
+
   if (!response?.title || !response?.description) {
+    if (!hasMeaningfulCapturedContent(response)) {
+      render({
+        error: 'Facebook capture did not find enough listing data. Fill the fields manually or try another Marketplace page variant.',
+        notes: Array.isArray(response?.notes) ? response.notes : [],
+      });
+      return;
+    }
+
+    if (!sameCapturedListing) {
+      brandInput.value = '';
+      titleInput.value = '';
+      descriptionInput.value = '';
+    }
+    applyCapturedDraftFields(response);
+
+    const partialSourceListing = buildActiveSourceListing(mergeCapturedSource(capturedSource, tab?.url || ''));
+    const nextSignature = computeSourceSignature(partialSourceListing);
+    const sourceChanged = !sameCapturedListing || previousSignature !== nextSignature;
+    await chrome.storage.local.set({
+      sourceListing: partialSourceListing,
+      ...(sourceChanged ? { results: [], lastSearchSourceSignature: '' } : {}),
+    });
+    currentSourceListing = partialSourceListing;
+    if (sourceChanged) {
+      currentResults = [];
+      lastSearchSourceSignature = '';
+    }
+    renderSourceListingSummary(partialSourceListing);
+    renderResultsMeta();
+    renderResultsSummary(currentResults);
+    await persistDraft();
     render({
       error: 'Facebook capture did not find both title and description. Fill missing fields manually or try another Marketplace page variant.',
       notes: Array.isArray(response?.notes) ? response.notes : [],
@@ -98,12 +155,14 @@ async function captureCurrentListing() {
     return;
   }
 
-  titleInput.value = response.title;
-  descriptionInput.value = response.description;
+  applyCapturedDraftFields(response);
 
-  await chrome.storage.local.set({ sourceListing: response, results: [] });
-  currentSourceListing = response;
-  renderSourceListingSummary(response);
+  const sourceListing = buildActiveSourceListing(mergeCapturedSource(capturedSource, tab?.url || ''));
+  await chrome.storage.local.set({ sourceListing, results: [], lastSearchSourceSignature: '' });
+  currentSourceListing = sourceListing;
+  currentResults = [];
+  lastSearchSourceSignature = '';
+  renderSourceListingSummary(sourceListing);
   renderResultsMeta();
   renderResultsSummary([]);
   await persistDraft();
@@ -119,15 +178,25 @@ async function captureCurrentListing() {
 }
 
 async function searchEbayMatches() {
-  const sourceInput = buildSourceInput();
-  const query = buildDraftQuery();
+  await cancelPendingSourceSync();
   if (!titleInput.value.trim() || !descriptionInput.value.trim()) {
     render({ error: 'Title and description are both required before searching eBay.' });
     return;
   }
 
+  const sourceInput = buildSourceInput();
+  const query = buildDraftQuery();
+
+  clearTimeout(sourceSyncTimer);
+  lastSearchSourceSignature = '';
   await persistDraft();
-  await chrome.storage.local.set({ results: [] });
+  const activeSourceListing = buildActiveSourceListing();
+  const requestSourceSignature = computeSourceSignature(activeSourceListing);
+  const requestId = ++activeSearchRequestId;
+  currentSourceListing = activeSourceListing;
+  currentResults = [];
+  await chrome.storage.local.set({ sourceListing: activeSourceListing, results: [], lastSearchSourceSignature: '' });
+  renderSourceListingSummary(activeSourceListing);
   renderResultsMeta();
   renderResultsSummary([]);
 
@@ -142,7 +211,12 @@ async function searchEbayMatches() {
       },
     });
   } catch {
+    if (requestId !== activeSearchRequestId) return;
     render({ error: 'The background search failed before eBay returned results. Check your token and reload the extension.' });
+    return;
+  }
+
+  if (requestId !== activeSearchRequestId) {
     return;
   }
 
@@ -151,8 +225,17 @@ async function searchEbayMatches() {
     return;
   }
 
+  if (computeSourceSignature(readCurrentSourceListing()) !== requestSourceSignature) {
+    renderResultsMeta();
+    renderResultsSummary([]);
+    render({ message: 'Source changed while the search was running. Re-run search for fresh matches.' });
+    return;
+  }
+
   const matches = Array.isArray(response.matches) ? response.matches : [];
-  await chrome.storage.local.set({ results: matches });
+  currentResults = matches;
+  lastSearchSourceSignature = requestSourceSignature;
+  await chrome.storage.local.set({ results: matches, lastSearchSourceSignature: requestSourceSignature });
   renderResultsMeta(response.queryAttempts || [], response.query || query, matches.length);
   renderResultsSummary(matches);
   await maybeSaveHistory({
@@ -200,18 +283,23 @@ async function applyFilters() {
 }
 
 async function resetSession() {
+  await cancelPendingSourceSync();
   const createEmptySessionState = globalThis.MarketMatchLib?.createEmptySessionState;
   const emptyState = typeof createEmptySessionState === 'function'
     ? createEmptySessionState()
-    : { draft: { brand: '', title: '', description: '' }, sourceListing: null, results: [] };
+    : { draft: { brand: '', title: '', description: '' }, sourceListing: null, lastSearchSourceSignature: '', results: [] };
 
   await chrome.storage.local.set({
     draft: emptyState.draft,
     sourceListing: emptyState.sourceListing,
+    lastSearchSourceSignature: '',
     results: emptyState.results,
   });
 
   currentSourceListing = null;
+  currentResults = emptyState.results;
+  lastSearchSourceSignature = '';
+  activeSearchRequestId += 1;
   restoreDraft(emptyState.draft);
   renderSourceListingSummary(null);
   renderResultsMeta();
@@ -359,7 +447,7 @@ function renderSourceListingSummary(sourceListing) {
     <div class="miniItem">
       <strong>${escapeHtml(sourceListing.title || 'Untitled source listing')}</strong>
       <div class="miniMeta">${escapeHtml(sourceListing.condition || 'condition unknown')} · ${sourceListing.listedPrice != null ? `$${Number(sourceListing.listedPrice).toFixed(2)}` : 'price unavailable'}</div>
-      <div class="miniMeta">${escapeHtml(sourceListing.locationText || 'location unavailable')}${sourceListing.bestOfferDetected ? ' · offer language detected' : ''}${sourceListing.placeholderPriceFlag ? ' · placeholder price flagged' : ''}</div>
+      <div class="miniMeta">${escapeHtml(sourceListing.locationText || 'location unavailable')}${sourceListing.bestOfferDetected ? ' · offer language detected' : ''}${sourceListing.placeholderPriceFlag ? ' · placeholder price flagged' : ''}${sourceListing.brand ? ` · brand ${escapeHtml(sourceListing.brand)}` : ''}</div>
     </div>
   `;
 }
@@ -426,11 +514,206 @@ function buildDraftQuery() {
 }
 
 function buildSourceInput() {
+  const activeSourceListing = buildActiveSourceListing() || {};
   return {
+    brand: activeSourceListing.brand || '',
+    title: activeSourceListing.title || '',
+    description: activeSourceListing.description || '',
+  };
+}
+
+function buildActiveSourceListing(overrideSource = null) {
+  const baseSource = overrideSource || currentSourceListing || {};
+  const title = titleInput.value.trim();
+  const description = descriptionInput.value.trim();
+  const brand = brandInput.value.trim();
+  const hasBaseSource = Object.keys(baseSource).length > 0;
+  if (!hasBaseSource && !title && !description) {
+    return null;
+  }
+
+  return {
+    ...baseSource,
+    platform: baseSource.platform || 'facebook',
+    brand,
+    title,
+    description,
+    listedPrice: baseSource.listedPrice ?? null,
+    descriptionPriceHint: baseSource.descriptionPriceHint ?? null,
+    condition: baseSource.condition || '',
+    sellerName: baseSource.sellerName || '',
+    sellerStanding: baseSource.sellerStanding || '',
+    positiveRatings: baseSource.positiveRatings ?? null,
+    negativeRatings: baseSource.negativeRatings ?? null,
+    locationText: baseSource.locationText || '',
+    url: baseSource.url || '',
+    bestOfferDetected: Boolean(baseSource.bestOfferDetected),
+    placeholderPriceFlag: Boolean(baseSource.placeholderPriceFlag),
+    notes: Array.isArray(baseSource.notes) ? baseSource.notes : [],
+  };
+}
+
+function buildCapturedSourceListing(source = {}) {
+  return {
+    platform: source.platform || 'facebook',
+    title: source.title || '',
+    description: source.description || '',
+    listedPrice: source.listedPrice ?? null,
+    descriptionPriceHint: source.descriptionPriceHint ?? null,
+    shipping: source.shipping ?? null,
+    taxes: source.taxes ?? null,
+    condition: source.condition || '',
+    sellerName: source.sellerName || '',
+    sellerStanding: source.sellerStanding || '',
+    positiveRatings: source.positiveRatings ?? null,
+    negativeRatings: source.negativeRatings ?? null,
+    locationText: source.locationText || '',
+    url: source.url || '',
+    bestOfferDetected: Boolean(source.bestOfferDetected),
+    placeholderPriceFlag: Boolean(source.placeholderPriceFlag),
+    notes: Array.isArray(source.notes) ? source.notes : [],
+  };
+}
+
+function mergeCapturedSource(capturedSource = {}, activeTabUrl = '') {
+  const existingSource = currentSourceListing || {};
+  const sameListing = isSameCapturedListing(existingSource, capturedSource, activeTabUrl);
+  const baseSource = sameListing ? existingSource : {};
+  return {
+    ...baseSource,
+    ...capturedSource,
+    title: capturedSource.title || baseSource.title || '',
+    description: capturedSource.description || baseSource.description || '',
+    listedPrice: capturedSource.listedPrice ?? baseSource.listedPrice ?? null,
+    descriptionPriceHint: capturedSource.descriptionPriceHint ?? baseSource.descriptionPriceHint ?? null,
+    condition: capturedSource.condition || baseSource.condition || '',
+    sellerName: capturedSource.sellerName || baseSource.sellerName || '',
+    sellerStanding: capturedSource.sellerStanding || baseSource.sellerStanding || '',
+    positiveRatings: capturedSource.positiveRatings ?? baseSource.positiveRatings ?? null,
+    negativeRatings: capturedSource.negativeRatings ?? baseSource.negativeRatings ?? null,
+    locationText: capturedSource.locationText || baseSource.locationText || '',
+    url: capturedSource.url || baseSource.url || activeTabUrl || '',
+    bestOfferDetected: Boolean(capturedSource.bestOfferDetected || baseSource.bestOfferDetected),
+    placeholderPriceFlag: Boolean(capturedSource.placeholderPriceFlag || baseSource.placeholderPriceFlag),
+    notes: Array.isArray(capturedSource.notes) && capturedSource.notes.length ? capturedSource.notes : (Array.isArray(baseSource.notes) ? baseSource.notes : []),
+  };
+}
+
+function isSameCapturedListing(existingSource = {}, capturedSource = {}, activeTabUrl = '') {
+  const existingUrl = normalizeListingUrl(existingSource.url || '');
+  const capturedUrl = normalizeListingUrl(capturedSource.url || activeTabUrl || '');
+  return Boolean(existingUrl && capturedUrl && existingUrl === capturedUrl);
+}
+
+function normalizeListingUrl(url = '') {
+  const value = String(url || '').trim();
+  if (!value) return '';
+
+  try {
+    const parsed = new URL(value);
+    parsed.hostname = parsed.hostname.toLowerCase().replace(/^(m|www)\./, '');
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    parsed.hash = '';
+    parsed.search = '';
+    return parsed.toString();
+  } catch {
+    return value
+      .replace(/[?#].*$/, '')
+      .replace(/^https?:\/\/(m|www)\./i, 'https://')
+      .replace(/\/+$/, '');
+  }
+}
+
+function applyCapturedDraftFields(source = {}) {
+  if (source?.title) titleInput.value = source.title;
+  if (source?.description) descriptionInput.value = source.description;
+}
+
+function scheduleActiveSourceSync() {
+  clearTimeout(sourceSyncTimer);
+  sourceSyncTimer = setTimeout(() => {
+    sourceSyncTimer = null;
+    activeSourceSyncPromise = syncActiveSourceListing().catch(() => {});
+  }, 150);
+}
+
+async function cancelPendingSourceSync() {
+  clearTimeout(sourceSyncTimer);
+  sourceSyncTimer = null;
+  sourceSyncRevision += 1;
+  await activeSourceSyncPromise;
+}
+
+async function syncActiveSourceListing() {
+  const syncRevision = ++sourceSyncRevision;
+  const draftSnapshot = {
     brand: brandInput.value.trim(),
     title: titleInput.value.trim(),
     description: descriptionInput.value.trim(),
   };
+  const nextSourceListing = buildActiveSourceListing();
+  const nextSignature = computeSourceSignature(nextSourceListing);
+  const sourceChangedSinceSearch = Boolean(lastSearchSourceSignature) && nextSignature !== lastSearchSourceSignature;
+  const nextResults = sourceChangedSinceSearch ? [] : currentResults;
+  const nextSearchSourceSignature = sourceChangedSinceSearch ? '' : lastSearchSourceSignature;
+
+  if (syncRevision !== sourceSyncRevision) {
+    return;
+  }
+
+  const storagePayload = {
+    draft: draftSnapshot,
+    sourceListing: nextSourceListing,
+    ...(sourceChangedSinceSearch ? { results: [], lastSearchSourceSignature: '' } : {}),
+  };
+
+  await chrome.storage.local.set(storagePayload);
+  if (syncRevision !== sourceSyncRevision) {
+    return;
+  }
+
+  currentSourceListing = nextSourceListing;
+  if (sourceChangedSinceSearch) {
+    currentResults = [];
+    lastSearchSourceSignature = '';
+  } else {
+    currentResults = nextResults;
+    lastSearchSourceSignature = nextSearchSourceSignature;
+  }
+  renderSourceListingSummary(currentSourceListing);
+  if (sourceChangedSinceSearch) {
+    renderResultsMeta();
+    render({ message: 'Source changed. Re-run search for fresh matches.' });
+  }
+  renderResultsSummary(currentResults);
+}
+
+function computeSourceSignature(sourceListing) {
+  if (!sourceListing) return '';
+  return JSON.stringify({
+    brand: sourceListing.brand || '',
+    title: sourceListing.title || '',
+    description: sourceListing.description || '',
+    listedPrice: sourceListing.listedPrice ?? null,
+    descriptionPriceHint: sourceListing.descriptionPriceHint ?? null,
+    condition: sourceListing.condition || '',
+    locationText: sourceListing.locationText || '',
+    bestOfferDetected: Boolean(sourceListing.bestOfferDetected),
+    placeholderPriceFlag: Boolean(sourceListing.placeholderPriceFlag),
+  });
+}
+
+function hasMeaningfulCapturedContent(source = {}) {
+  return Boolean(
+    source?.title
+    || source?.description
+    || source?.listedPrice != null
+    || source?.descriptionPriceHint != null
+    || source?.condition
+    || source?.sellerName
+    || source?.locationText
+    || source?.url
+  );
 }
 
 function rankResultsForDisplay(results) {
@@ -545,15 +828,7 @@ function detectPlatformFromUrl(url = '') {
 }
 
 function readCurrentSourceListing() {
-  return currentSourceListing || {
-    title: titleInput.value.trim(),
-    description: descriptionInput.value.trim(),
-    listedPrice: null,
-    descriptionPriceHint: null,
-    condition: '',
-    locationText: '',
-    bestOfferDetected: false,
-  };
+  return buildActiveSourceListing();
 }
 
 function extractStateToken(locationText) {
