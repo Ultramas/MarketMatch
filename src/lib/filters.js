@@ -53,6 +53,7 @@
       if (comparisonSummary.conditionComparison === 'same') boost += 8;
       if (comparisonSummary.conditionComparison === 'better') boost += 10;
       if (comparisonSummary.conditionComparison === 'worse') boost -= 12;
+      if (comparisonSummary.conditionComparison === 'clearly-worse') boost -= 26;
 
       if (comparisonSummary.locationComparison === 'same-city') boost += 8;
       else if (comparisonSummary.locationComparison === 'same-state') boost += 5;

@@ -246,17 +246,22 @@
   }
 
   function compareCondition(sourceCondition, resultCondition) {
-    const sourceRank = rankCondition(sourceCondition);
-    const resultRank = rankCondition(resultCondition);
-    if (!sourceRank || !resultRank) {
+    const sourceBucket = getConditionBucket(sourceCondition);
+    const resultBucket = getConditionBucket(resultCondition);
+    if (!sourceBucket.rank || !resultBucket.rank) {
       return { value: 'unknown', label: '', isMismatch: false };
     }
-    if (sourceRank === resultRank) {
+    if (sourceBucket.rank === resultBucket.rank) {
       return { value: 'same', label: 'Condition aligns with source', isMismatch: false };
     }
-    if (resultRank > sourceRank) {
+    if (resultBucket.rank > sourceBucket.rank) {
       return { value: 'better', label: 'Condition looks stronger than source', isMismatch: false };
     }
+
+    if ((sourceBucket.rank - resultBucket.rank) >= 2) {
+      return { value: 'clearly-worse', label: 'Condition is clearly worse than source', isMismatch: true };
+    }
+
     return { value: 'worse', label: 'Condition looks worse than source', isMismatch: true };
   }
 
@@ -311,15 +316,17 @@
     return { value: 'paid', label: 'Paid shipping', isMismatch: false };
   }
 
-  function rankCondition(value) {
+  function getConditionBucket(value) {
     const text = String(value || '').toLowerCase();
-    if (!text) return 0;
-    if (/new/.test(text)) return 5;
-    if (/like new/.test(text)) return 4;
-    if (/very good|good|used/.test(text)) return 3;
-    if (/fair|acceptable/.test(text)) return 2;
-    if (/parts|broken|poor/.test(text)) return 1;
-    return 0;
+    if (!text) return { rank: 0, bucket: 'unknown' };
+    if (/for parts|parts only|broken|poor|not working|as is/.test(text)) return { rank: 1, bucket: 'parts' };
+    if (/fair|acceptable/.test(text)) return { rank: 2, bucket: 'fair' };
+    if (/used - good|very good|good/.test(text)) return { rank: 3, bucket: 'good' };
+    if (/used - like new|like new|open box|open-box|excellent/.test(text)) return { rank: 4, bucket: 'like-new' };
+    if (/brand new|new in box|new/.test(text)) return { rank: 5, bucket: 'new' };
+    if (/refurbished|renewed/.test(text)) return { rank: 3, bucket: 'refurbished' };
+    if (/used/.test(text)) return { rank: 3, bucket: 'used' };
+    return { rank: 0, bucket: 'unknown' };
   }
 
   function roundCurrency(value) {

@@ -17,6 +17,7 @@ const distanceScopeInput = document.getElementById('distanceScope');
 const userStateInput = document.getElementById('userState');
 const freeShippingOnlyInput = document.getElementById('freeShippingOnly');
 const includeAuctionOnlyInput = document.getElementById('includeAuctionOnly');
+const hideWorseConditionInput = document.getElementById('hideWorseCondition');
 const brandRequiredInput = document.getElementById('brandRequired');
 const sellerStandingBoostInput = document.getElementById('sellerStandingBoost');
 const consentCard = document.getElementById('consentCard');
@@ -44,6 +45,7 @@ const FILTER_DEFAULTS = {
   brand: '',
   freeShippingOnly: false,
   includeAuctionOnly: false,
+  hideWorseCondition: false,
   minPositiveRatings: 5,
   maxNegativeRatioDivisor: 5,
   sellerStandingBoost: true,
@@ -290,6 +292,7 @@ async function applyFilters() {
     brand: brandInput.value.trim(),
     freeShippingOnly: freeShippingOnlyInput.checked,
     includeAuctionOnly: includeAuctionOnlyInput.checked,
+    hideWorseCondition: hideWorseConditionInput.checked,
     sellerStandingBoost: sellerStandingBoostInput.checked,
     userState: userStateInput.value.trim() || effectiveSettings.defaultState || '',
   };
@@ -482,6 +485,7 @@ function renderStatusPills(filters = {}, consent = {}, settings = {}) {
     consent?.historyAllowed ? 'History Enabled' : 'History Off',
     filters?.freeShippingOnly ? 'Free Ship Only' : 'Any Shipping',
     filters?.includeAuctionOnly ? 'Auctions Included' : 'Fixed Price Focus',
+    filters?.hideWorseCondition ? 'Hide Worse Condition' : 'Mixed Conditions',
     filters?.sellerStandingBoost !== false ? 'Seller Boost On' : 'Seller Boost Off',
   ];
 
@@ -518,6 +522,7 @@ function restoreFilters(filters = {}, settings = {}) {
   userStateInput.value = merged.userState;
   freeShippingOnlyInput.checked = Boolean(merged.freeShippingOnly);
   includeAuctionOnlyInput.checked = Boolean(merged.includeAuctionOnly);
+  hideWorseConditionInput.checked = Boolean(merged.hideWorseCondition);
   brandRequiredInput.checked = Boolean(merged.brandRequired);
   sellerStandingBoostInput.checked = merged.sellerStandingBoost !== false;
 }
@@ -764,6 +769,10 @@ function passesActiveFilters(result, sourceListing) {
     return false;
   }
 
+  if (hideWorseConditionInput.checked && result?.comparisonSummary?.conditionComparison === 'clearly-worse') {
+    return false;
+  }
+
   if (brandRequiredInput.checked) {
     const brand = brandInput.value.trim().toLowerCase();
     if (brand && !String(result.title || '').toLowerCase().includes(brand)) {
@@ -817,6 +826,7 @@ function buildFlags(result) {
   const priceBandComparison = result?.comparisonSummary?.priceBandComparison;
   if (result.bestOfferDetected) flags.push('Best Offer');
   if (result.isAuctionOnly) flags.push('Auction Only');
+  if (result?.comparisonSummary?.conditionComparison === 'clearly-worse') flags.push('Worse Condition');
   if (Number(result.shipping) === 0) flags.push('Free Shipping');
   if (result.shipping == null) flags.push('Shipping Unknown');
   if (result.sellerStanding) flags.push('Seller Signal');
