@@ -83,8 +83,9 @@ manifest.json            Firefox extension manifest
 - Continue Firefox-targeted validation and polish
 
 ## Developer todo
-- Add repeatable fixture-based tests for Facebook capture, normalization, ranking, and popup filtering behavior
-- Validate more Facebook Marketplace DOM variants across public, login-gated, and mobile-ish layouts
-- Improve distance and seller-quality heuristics beyond current state/country and feedback-based signals
-- Expand tax and shipping interpretation so landed-cost comparisons rely less on defaults
-- Decide whether inactive adapter scaffolds should be removed or fully implemented
+- #5 Add repeatable fixture-based tests for Facebook capture, normalization, ranking, and popup filtering behavior
+- #6 Validate more Facebook Marketplace DOM variants across public, login-gated, and mobile-ish layouts
+- #4 Improve distance and seller-quality heuristics beyond current state/country and feedback-based signals
+- #9 Expand tax and shipping interpretation so landed-cost comparisons rely less on defaults
+- #7 Decide whether inactive adapter scaffolds should be removed or fully implemented
+- #8 Add Firefox-targeted validation and release-readiness checks
