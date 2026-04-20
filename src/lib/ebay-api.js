@@ -82,6 +82,7 @@
       ? Number(shippingOption.shippingCost.value)
       : null;
     const price = item.price?.value ? Number(item.price.value) : 0;
+    const listingSignals = deriveListingSignals(item.buyingOptions || []);
 
     return {
       platform: 'ebay',
@@ -103,6 +104,8 @@
         .join(', '),
       buyingOptions: item.buyingOptions || [],
       bestOfferDetected: Array.isArray(item.buyingOptions) && item.buyingOptions.includes('BEST_OFFER'),
+      listingFormat: listingSignals.listingFormat,
+      isAuctionOnly: listingSignals.isAuctionOnly,
       placeholderPriceFlag: false,
       matchReason: buildMatchReason(item),
       notes: ['Mapped from eBay Browse API item_summary/search response.'],
@@ -111,6 +114,7 @@
 
   function mapItemDetails(item) {
     const shippingOption = pickPreferredShippingOption(item.shippingOptions || []);
+    const listingSignals = deriveListingSignals(item.buyingOptions || []);
     return {
       id: item.itemId || '',
       shipping: shippingOption?.shippingCost?.value != null ? Number(shippingOption.shippingCost.value) : null,
@@ -124,16 +128,40 @@
         .join(', '),
       buyingOptions: item.buyingOptions || [],
       bestOfferDetected: Array.isArray(item.buyingOptions) && item.buyingOptions.includes('BEST_OFFER'),
+      listingFormat: listingSignals.listingFormat,
+      isAuctionOnly: listingSignals.isAuctionOnly,
       notes: ['Enriched from eBay Browse API getItem response.'],
     };
   }
 
   function buildMatchReason(item) {
     const reasons = [];
+    const listingSignals = deriveListingSignals(item.buyingOptions || []);
     if (item.condition) reasons.push(item.condition);
     if (item.seller?.feedbackPercentage) reasons.push(`${item.seller.feedbackPercentage}% seller feedback`);
     if (item.shippingOptions?.some((option) => Number(option.shippingCost?.value) === 0)) reasons.push('free shipping');
+    if (listingSignals.isAuctionOnly) reasons.push('auction-only');
     return reasons.join(' · ');
+  }
+
+  function deriveListingSignals(buyingOptions) {
+    const normalized = Array.isArray(buyingOptions)
+      ? [...new Set(buyingOptions.map((option) => String(option || '').toUpperCase()).filter(Boolean))]
+      : [];
+    const hasAuction = normalized.includes('AUCTION');
+    const hasFixedPrice = normalized.includes('FIXED_PRICE');
+    const hasBestOffer = normalized.includes('BEST_OFFER');
+    const isAuctionOnly = hasAuction && !hasFixedPrice && !hasBestOffer;
+
+    let listingFormat = 'unspecified';
+    if (isAuctionOnly) listingFormat = 'auction-only';
+    else if (hasAuction && (hasFixedPrice || hasBestOffer)) listingFormat = 'auction-or-fixed';
+    else if (hasFixedPrice || hasBestOffer) listingFormat = 'fixed-price';
+
+    return {
+      listingFormat,
+      isAuctionOnly,
+    };
   }
 
   function pickPreferredShippingOption(shippingOptions) {
@@ -174,6 +202,8 @@
       locationText: detail.locationText || match.locationText,
       buyingOptions: detail.buyingOptions?.length ? detail.buyingOptions : match.buyingOptions,
       bestOfferDetected: Boolean(detail.bestOfferDetected || match.bestOfferDetected),
+      listingFormat: detail.listingFormat || match.listingFormat || 'unspecified',
+      isAuctionOnly: Boolean(detail.isAuctionOnly || match.isAuctionOnly),
       notes: [...(match.notes || []), ...(detail.notes || [])],
     };
   }

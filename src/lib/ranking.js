@@ -23,6 +23,7 @@
     }, sourcePriceContext);
     const variantMismatchPenalty = Number(confidence.variantMismatchPenalty || 0);
     const priceBandPenalty = Number(comparisonSummary.priceBandPenalty || 0);
+    const listingFormatPenalty = Number(comparisonSummary.listingFormatPenalty || 0);
     const summarizedComparison = appendVariantMismatchSummary(comparisonSummary, confidence.variantMismatches);
     const rankingBoost = lib.computeRankingBoosts(result, {
       ...options,
@@ -39,11 +40,12 @@
       variantMismatchSignals: confidence.variantMismatches || [],
       variantMismatchPenalty,
       priceBandPenalty,
+      listingFormatPenalty,
       sourcePriceConfidence: sourcePriceContext.confidence,
       sourcePriceBasis: sourcePriceContext.basis,
       comparisonSummary: summarizedComparison,
       rankingBoost,
-      adjustedRankScore: totalCost - rankingBoost - (confidence.score * 0.12) + (variantMismatchPenalty * 0.4) + priceBandPenalty,
+      adjustedRankScore: totalCost - rankingBoost - (confidence.score * 0.12) + (variantMismatchPenalty * 0.4) + priceBandPenalty + listingFormatPenalty,
     };
   };
 
@@ -58,6 +60,7 @@
     const totalCost = Number(result.totalCost || 0);
     const priceDelta = sourcePrice == null ? null : roundCurrency(totalCost - sourcePrice);
     const priceBandComparison = comparePriceBand(sourcePriceContext, totalCost, priceDelta);
+    const listingFormatComparison = compareListingFormat(result);
     const sourcePriceReference = sourcePriceContext.confidence === 'weak' ? 'source price hint' : 'source';
     const conditionComparison = compareCondition(source?.condition, result?.condition);
     const locationComparison = compareLocation(source?.locationText, result?.locationText);
@@ -78,6 +81,10 @@
 
     if (priceBandComparison.label) {
       (priceBandComparison.isMismatch ? mismatches : reasons).push(priceBandComparison.label);
+    }
+
+    if (listingFormatComparison.label) {
+      (listingFormatComparison.isMismatch ? mismatches : reasons).push(listingFormatComparison.label);
     }
 
     if (conditionComparison.label) {
@@ -103,6 +110,8 @@
       priceDelta,
       priceBandComparison: priceBandComparison.value,
       priceBandPenalty: priceBandComparison.penalty,
+      listingFormatComparison: listingFormatComparison.value,
+      listingFormatPenalty: listingFormatComparison.penalty,
       conditionComparison: conditionComparison.value,
       locationComparison: locationComparison.value,
       offerComparison: offerComparison.value,
@@ -210,6 +219,19 @@
     }
 
     return { value: 'within-band', label: '', isMismatch: false, penalty: 0 };
+  }
+
+  function compareListingFormat(result) {
+    if (result?.isAuctionOnly) {
+      return {
+        value: 'auction-only',
+        label: 'Auction-only listing; current bid may not reflect the final sale price',
+        isMismatch: true,
+        penalty: 180,
+      };
+    }
+
+    return { value: 'standard', label: '', isMismatch: false, penalty: 0 };
   }
 
   function isCompatiblePriceHint(listedPrice, hintedPrice) {

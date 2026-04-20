@@ -807,6 +807,7 @@ function buildFlags(result) {
   const flags = [];
   const priceBandComparison = result?.comparisonSummary?.priceBandComparison;
   if (result.bestOfferDetected) flags.push('Best Offer');
+  if (result.isAuctionOnly) flags.push('Auction Only');
   if (Number(result.shipping) === 0) flags.push('Free Shipping');
   if (result.shipping == null) flags.push('Shipping Unknown');
   if (result.sellerStanding) flags.push('Seller Signal');
