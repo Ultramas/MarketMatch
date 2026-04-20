@@ -18,6 +18,7 @@ const userStateInput = document.getElementById('userState');
 const freeShippingOnlyInput = document.getElementById('freeShippingOnly');
 const includeAuctionOnlyInput = document.getElementById('includeAuctionOnly');
 const hideWorseConditionInput = document.getElementById('hideWorseCondition');
+const hideLikelyMismatchInput = document.getElementById('hideLikelyMismatch');
 const brandRequiredInput = document.getElementById('brandRequired');
 const sellerStandingBoostInput = document.getElementById('sellerStandingBoost');
 const consentCard = document.getElementById('consentCard');
@@ -47,6 +48,7 @@ const FILTER_DEFAULTS = {
   freeShippingOnly: false,
   includeAuctionOnly: false,
   hideWorseCondition: false,
+  hideLikelyMismatch: false,
   minPositiveRatings: 5,
   maxNegativeRatioDivisor: 5,
   sellerStandingBoost: true,
@@ -295,6 +297,7 @@ async function applyFilters() {
     freeShippingOnly: freeShippingOnlyInput.checked,
     includeAuctionOnly: includeAuctionOnlyInput.checked,
     hideWorseCondition: hideWorseConditionInput.checked,
+    hideLikelyMismatch: hideLikelyMismatchInput.checked,
     sellerStandingBoost: sellerStandingBoostInput.checked,
     userState: userStateInput.value.trim() || effectiveSettings.defaultState || '',
   };
@@ -518,6 +521,7 @@ function renderStatusPills(filters = {}, consent = {}, settings = {}) {
     filters?.freeShippingOnly ? 'Free Ship Only' : 'Any Shipping',
     filters?.includeAuctionOnly ? 'Auctions Included' : 'Fixed Price Focus',
     filters?.hideWorseCondition ? 'Hide Worse Condition' : 'Mixed Conditions',
+    filters?.hideLikelyMismatch ? 'Hide Likely Mismatch' : 'Mismatch Watchouts Only',
     filters?.sellerStandingBoost !== false ? 'Seller Boost On' : 'Seller Boost Off',
   ];
 
@@ -555,6 +559,7 @@ function restoreFilters(filters = {}, settings = {}) {
   freeShippingOnlyInput.checked = Boolean(merged.freeShippingOnly);
   includeAuctionOnlyInput.checked = Boolean(merged.includeAuctionOnly);
   hideWorseConditionInput.checked = Boolean(merged.hideWorseCondition);
+  hideLikelyMismatchInput.checked = Boolean(merged.hideLikelyMismatch);
   brandRequiredInput.checked = Boolean(merged.brandRequired);
   sellerStandingBoostInput.checked = merged.sellerStandingBoost !== false;
 }
@@ -817,6 +822,11 @@ function evaluateResultAgainstFilters(result, sourceListing) {
     reasons.push('worse-condition');
   }
 
+  const isLikelyMismatch = globalThis.MarketMatchLib?.isLikelyMismatch;
+  if (hideLikelyMismatchInput.checked && typeof isLikelyMismatch === 'function' && isLikelyMismatch(result)) {
+    reasons.push('likely-mismatch');
+  }
+
   if (brandRequiredInput.checked) {
     const brand = brandInput.value.trim().toLowerCase();
     if (brand && !String(result.title || '').toLowerCase().includes(brand)) {
@@ -877,6 +887,7 @@ function passesDistanceFilter(result, sourceListing) {
 function buildFlags(result) {
   const flags = [];
   const priceBandComparison = result?.comparisonSummary?.priceBandComparison;
+  const isLikelyMismatch = globalThis.MarketMatchLib?.isLikelyMismatch;
   if (result.bestOfferDetected) flags.push('Best Offer');
   if (result.isAuctionOnly) flags.push('Auction Only');
   if (result?.comparisonSummary?.conditionComparison === 'clearly-worse') flags.push('Worse Condition');
@@ -885,6 +896,7 @@ function buildFlags(result) {
   if (result.sellerStanding) flags.push('Seller Signal');
   if (Array.isArray(result.variantMismatchSignals) && result.variantMismatchSignals.length) flags.push('Possible Variant Mismatch');
   if (priceBandComparison === 'far-below' || priceBandComparison === 'far-above') flags.push('Price Watchout');
+  if (typeof isLikelyMismatch === 'function' && isLikelyMismatch(result)) flags.push('Likely Mismatch');
   if (result.locationText) flags.push(result.locationText);
   return flags;
 }
@@ -893,6 +905,7 @@ function formatFilterReason(reason) {
   if (reason === 'free-shipping') return 'shipping filter';
   if (reason === 'auction-only') return 'auction-only hidden';
   if (reason === 'worse-condition') return 'worse-condition hidden';
+  if (reason === 'likely-mismatch') return 'likely mismatch hidden';
   if (reason === 'brand-mismatch') return 'brand mismatch';
   if (reason === 'seller-threshold') return 'seller threshold';
   if (reason === 'distance-city') return 'different city';

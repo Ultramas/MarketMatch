@@ -32,6 +32,15 @@
     return Number(effectivePrice || 0) * rate;
   };
 
+  lib.isLikelyMismatch = function isLikelyMismatch(result = {}) {
+    const comparisonSummary = result.comparisonSummary || {};
+    const variantSignals = Array.isArray(result.variantMismatchSignals) ? result.variantMismatchSignals : [];
+
+    return variantSignals.length > 0
+      || comparisonSummary.conditionComparison === 'clearly-worse'
+      || comparisonSummary.priceBandComparison === 'far-below';
+  };
+
   lib.computeRankingBoosts = function computeRankingBoosts(result, { sellerStandingBoost = true, couponSavings = 0, comparisonSummary = null } = {}) {
     let boost = 0;
     const queryVariantHits = Number(result?.queryVariantHits || 0);

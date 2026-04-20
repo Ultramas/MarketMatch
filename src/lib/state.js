@@ -26,6 +26,7 @@
     freeShippingOnly: false,
     includeAuctionOnly: false,
     hideWorseCondition: false,
+    hideLikelyMismatch: false,
     minPositiveRatings: lib.DEFAULT_SETTINGS.minPositiveRatings,
     maxNegativeRatioDivisor: lib.DEFAULT_SETTINGS.maxNegativeRatioDivisor,
     sellerStandingBoost: true,
