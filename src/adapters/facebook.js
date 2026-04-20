@@ -9,12 +9,13 @@
         const description = extractDescription(doc, mainRoot);
         const listedPrice = extractPrice(doc, mainRoot);
         const sellerName = extractSellerName(doc, mainRoot);
-        const locationText = extractLocationText(mainRoot || doc.body);
+        const locationDetails = extractLocationDetails(mainRoot || doc.body);
+        const locationText = locationDetails.text || '';
         const condition = findCondition(mainRoot || doc.body);
         const combinedText = `${title || ''} ${description || ''}`.trim();
         const moneyHints = extractMoneyHints(description);
         const descriptionPriceHint = moneyHints.length ? moneyHints[0] : null;
-        const notes = buildCaptureNotes({ title, description, listedPrice, locationText, sellerName });
+        const notes = buildCaptureNotes({ title, description, listedPrice, locationText, locationDetails, sellerName });
 
         return {
           platform: 'facebook',
@@ -32,6 +33,7 @@
           positiveRatings: null,
           negativeRatings: null,
           locationText: locationText || '',
+          locationConfidence: locationDetails.confidence || 'missing',
           bestOfferDetected: /\bbest offer\b|\boffer\b/i.test(combinedText),
           placeholderPriceFlag: isFacebookPlaceholderPrice(listedPrice, combinedText),
           notes,
@@ -192,13 +194,21 @@
     return match ? match[1] : '';
   }
 
-  function extractLocationText(root) {
+  function extractLocationDetails(root) {
     const candidate = pickBestLocationCandidate([
       ...buildLocationCandidates(collectLabeledTextCandidates(root, [/location/i, /pickup/i, /ships to you/i], 8), 'label'),
       ...buildLocationCandidates(collectStructuredTextCandidates(root, '[role="main"] span, [role="main"] div', 180), 'structured'),
     ]);
 
-    return candidate?.text || '';
+    if (!candidate) {
+      return { text: '', confidence: 'missing', kind: 'missing' };
+    }
+
+    return {
+      text: candidate.text || '',
+      confidence: candidate.confidence || 'weak',
+      kind: candidate.kind || 'fallback',
+    };
   }
 
   function extractMoneyHints(text) {
@@ -257,11 +267,14 @@
     const locationText = stripBoilerplateLocation(extractLocationFragment(rawText));
     if (!isUsefulLocation(locationText)) return null;
     if (looksLikeGeographicLocation(locationText) && !shouldAcceptGeographicLocation(rawText, locationText, source)) return null;
+    const kind = classifyLocationCandidate(rawText, locationText, source);
 
     return {
       source,
       rawText,
       text: locationText,
+      kind,
+      confidence: kind === 'explicit-geographic' || kind === 'geographic' ? 'strong' : 'weak',
     };
   }
 
@@ -422,7 +435,7 @@
     return '';
   }
 
-  function buildCaptureNotes({ title, description, listedPrice, locationText, sellerName }) {
+  function buildCaptureNotes({ title, description, listedPrice, locationText, locationDetails = {}, sellerName }) {
     const notes = [
       'Facebook extraction prefers metadata and scoped Marketplace text before broad fallbacks.',
       'Description money hints are captured when dollar amounts appear in the description.',
@@ -432,6 +445,7 @@
     if (!description) notes.push('Description was not captured automatically.');
     if (listedPrice == null) notes.push('Visible listing price was not detected automatically.');
     if (!locationText) notes.push('Location text was not detected automatically.');
+    if (locationText && locationDetails?.confidence === 'weak') notes.push('Location text was inferred from weak Marketplace signals.');
     if (!sellerName) notes.push('Seller name was not detected automatically.');
 
     return notes;
@@ -684,6 +698,11 @@
     if (candidate.source === 'structured') score += 18;
     if (candidate.source === 'text') score += 8;
 
+    if (candidate.kind === 'explicit-geographic') score += 32;
+    if (candidate.kind === 'geographic') score += 18;
+    if (candidate.kind === 'distance-only') score -= 12;
+    if (candidate.kind === 'delivery-mode') score -= 8;
+
     if (looksGeographic) score += 28;
     if (/,[A-Z]{2}\b/.test(value)) score += 16;
     if (/,[A-Z]{2,3}\b/.test(value)) score += 10;
@@ -693,6 +712,23 @@
     if (/ships to you|local pickup/i.test(value) && !looksGeographic) score -= 8;
 
     return score;
+  }
+
+  function classifyLocationCandidate(rawText, locationText, source) {
+    const raw = cleanText(rawText);
+    const location = cleanText(locationText);
+    if (!raw || !location) return 'fallback';
+
+    if (looksLikeGeographicLocation(location)) {
+      if (source === 'label' || hasExplicitLocationContext(raw) || raw === location) {
+        return 'explicit-geographic';
+      }
+      return 'geographic';
+    }
+
+    if (/miles away/i.test(location)) return 'distance-only';
+    if (/ships to you|local pickup/i.test(location)) return 'delivery-mode';
+    return 'fallback';
   }
 
   function looksLikeGeographicLocation(value) {

@@ -475,7 +475,7 @@ function renderSourceListingSummary(sourceListing) {
     <div class="miniItem">
       <strong>${escapeHtml(sourceListing.title || 'Untitled source listing')}</strong>
       <div class="miniMeta">${escapeHtml(sourceListing.condition || 'condition unknown')} · ${sourceListing.listedPrice != null ? `$${Number(sourceListing.listedPrice).toFixed(2)}` : 'price unavailable'}</div>
-      <div class="miniMeta">${escapeHtml(sourceListing.locationText || 'location unavailable')}${sourceListing.bestOfferDetected ? ' · offer language detected' : ''}${sourceListing.placeholderPriceFlag ? ' · placeholder price flagged' : ''}${sourceListing.brand ? ` · brand ${escapeHtml(sourceListing.brand)}` : ''}</div>
+      <div class="miniMeta">${escapeHtml(sourceListing.locationText || 'location unavailable')}${sourceListing.locationConfidence === 'weak' ? ' · location inferred' : ''}${sourceListing.bestOfferDetected ? ' · offer language detected' : ''}${sourceListing.placeholderPriceFlag ? ' · placeholder price flagged' : ''}${sourceListing.brand ? ` · brand ${escapeHtml(sourceListing.brand)}` : ''}</div>
     </div>
   `;
 }
@@ -576,6 +576,7 @@ function buildActiveSourceListing(overrideSource = null) {
     positiveRatings: baseSource.positiveRatings ?? null,
     negativeRatings: baseSource.negativeRatings ?? null,
     locationText: baseSource.locationText || '',
+    locationConfidence: baseSource.locationConfidence || 'missing',
     url: baseSource.url || '',
     bestOfferDetected: Boolean(baseSource.bestOfferDetected),
     placeholderPriceFlag: Boolean(baseSource.placeholderPriceFlag),
@@ -598,6 +599,7 @@ function buildCapturedSourceListing(source = {}) {
     positiveRatings: source.positiveRatings ?? null,
     negativeRatings: source.negativeRatings ?? null,
     locationText: source.locationText || '',
+    locationConfidence: source.locationConfidence || 'missing',
     url: source.url || '',
     bestOfferDetected: Boolean(source.bestOfferDetected),
     placeholderPriceFlag: Boolean(source.placeholderPriceFlag),
@@ -622,6 +624,7 @@ function mergeCapturedSource(capturedSource = {}, activeTabUrl = '') {
     positiveRatings: capturedSource.positiveRatings ?? baseSource.positiveRatings ?? null,
     negativeRatings: capturedSource.negativeRatings ?? baseSource.negativeRatings ?? null,
     locationText: capturedSource.locationText || baseSource.locationText || '',
+    locationConfidence: capturedSource.locationConfidence || baseSource.locationConfidence || 'missing',
     url: capturedSource.url || baseSource.url || activeTabUrl || '',
     bestOfferDetected: Boolean(capturedSource.bestOfferDetected || baseSource.bestOfferDetected),
     placeholderPriceFlag: Boolean(capturedSource.placeholderPriceFlag || baseSource.placeholderPriceFlag),
