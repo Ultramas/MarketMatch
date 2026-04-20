@@ -7,12 +7,21 @@
     'offer', 'offers', 'obo', 'firm', 'price', 'cash', 'only', 'sale', 'selling', 'ships', 'ship'
   ]);
 
+  const ACCESSORY_NOISE_WORDS = new Set([
+    'case', 'cover', 'shell', 'box', 'manual', 'remote', 'headboard', 'parts', 'broken'
+  ]);
+
   lib.buildQuery = function buildQuery({ brand, title, description }) {
     return lib.normalizeSearchInput({ brand, title, description }).query;
   };
 
   lib.buildQueryVariants = function buildQueryVariants({ brand, title, description }) {
     const normalized = lib.normalizeSearchInput({ brand, title, description });
+    const variantSignals = extractVariantSignals(`${title || ''} ${description || ''}`);
+    const identifierFirst = dedupe([
+      ...normalized.brandTokens,
+      ...buildIdentifierFirstTokens(normalized, variantSignals),
+    ]).slice(0, 8);
     const titleFocused = dedupe([
       ...normalized.brandTokens,
       ...extractIdentifierTokens(normalized.titleTokens),
@@ -26,15 +35,23 @@
     const broad = dedupe([
       ...normalized.brandTokens,
       ...normalized.titleTokens.slice(0, 6),
-      ...normalized.descriptionTokens.slice(0, 4),
+      ...filterAccessoryNoise(normalized.descriptionTokens).slice(0, 4),
     ]).slice(0, 12);
+    const roleAware = dedupe([
+      ...normalized.brandTokens,
+      ...extractIdentifierTokens(normalized.titleTokens).slice(0, 3),
+      ...buildRoleAwareTokens(variantSignals),
+      ...filterAccessoryNoise(normalized.titleTokens).slice(0, 4),
+    ]).slice(0, 10);
 
     return {
       ...normalized,
       queries: dedupe([
+        identifierFirst.join(' ').trim(),
         normalized.query,
         titleFocused.join(' ').trim(),
         balanced.join(' ').trim(),
+        roleAware.join(' ').trim(),
         broad.join(' ').trim(),
       ]).filter(Boolean),
     };
@@ -286,6 +303,27 @@
         && !/^\d+(?:\.\d+)?(?:gb|tb|mb)$/.test(token)
       ))
     ).slice(0, 4);
+  }
+
+  function buildIdentifierFirstTokens(normalized, variantSignals) {
+    const dominantStorage = readDominantStorage(variantSignals.storageValues);
+    const tokens = [
+      ...extractIdentifierTokens(normalized.titleTokens).slice(0, 4),
+      ...(dominantStorage ? [dominantStorage.label.toLowerCase()] : []),
+      ...(variantSignals.sizeFamily ? [variantSignals.sizeFamily.key] : []),
+    ];
+
+    return tokens.filter(Boolean);
+  }
+
+  function buildRoleAwareTokens(variantSignals) {
+    if (!variantSignals.roleSignal) return [];
+
+    return tokenize(variantSignals.roleSignal.label).filter((token) => !STOP_WORDS.has(token)).slice(0, 3);
+  }
+
+  function filterAccessoryNoise(tokens = []) {
+    return tokens.filter((token) => !ACCESSORY_NOISE_WORDS.has(token));
   }
 
   function extractRoleSignal(text) {
