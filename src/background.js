@@ -25,7 +25,8 @@ const DEFAULT_FILTERS = {
 };
 
 const DEFAULT_SETTINGS = {
-  ebayApplicationToken: '',
+  ebayProxyBaseUrl: '',
+  proxyAccessKey: '',
   ebayMarketplaceId: 'EBAY_US',
   ebayLimit: 10,
   endUserZip: '',
@@ -39,6 +40,7 @@ const DEFAULT_SETTINGS = {
 const DEFAULT_CONSENT = {
   ...(globalThis.MarketMatchLib?.DEFAULT_CONSENT || {}),
 };
+const sanitizeSettings = globalThis.MarketMatchLib?.sanitizeSettings;
 
 const MAX_QUERY_ATTEMPTS = 3;
 const ENRICH_TOP_MATCHES = 3;
@@ -58,6 +60,9 @@ chrome.runtime.onInstalled.addListener(async () => {
     'consent',
     'settings',
   ]);
+  const settings = typeof sanitizeSettings === 'function'
+    ? sanitizeSettings(current.settings || {})
+    : { ...DEFAULT_SETTINGS, ...(current.settings || {}) };
 
   await chrome.storage.local.set({
     filters: { ...DEFAULT_FILTERS, ...(current.filters || {}) },
@@ -67,9 +72,15 @@ chrome.runtime.onInstalled.addListener(async () => {
     draft: current.draft || null,
     history: current.history || [],
     consent: { ...DEFAULT_CONSENT, ...(current.consent || {}) },
-    settings: { ...DEFAULT_SETTINGS, ...(current.settings || {}) },
+    settings,
   });
 });
+
+chrome.runtime.onStartup?.addListener(() => {
+  void migrateStoredSettings();
+});
+
+void migrateStoredSettings();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'GET_PLATFORM') {
@@ -104,10 +115,12 @@ async function searchEbayListings(payload = {}) {
   const buildQueryVariants = globalThis.MarketMatchLib?.buildQueryVariants;
   const rankResults = globalThis.MarketMatchLib?.rankResults;
   const buildComparableResult = globalThis.MarketMatchLib?.buildComparableResult;
-  const activeSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  const activeSettings = typeof sanitizeSettings === 'function'
+    ? sanitizeSettings(settings || {})
+    : { ...DEFAULT_SETTINGS, ...(settings || {}) };
 
   if (typeof searchEbayBrowse !== 'function') {
-    return { ok: false, error: 'eBay API helper is not loaded.' };
+    return { ok: false, error: 'eBay proxy helper is not loaded.' };
   }
 
   const sourceInput = {
@@ -126,10 +139,10 @@ async function searchEbayListings(payload = {}) {
     return { ok: false, error: 'Search query is required.' };
   }
 
-  if (!activeSettings.ebayApplicationToken) {
+  if (!activeSettings.ebayProxyBaseUrl) {
     return {
       ok: false,
-      error: 'Missing eBay application token. Add one in extension options before searching.',
+      error: 'Missing eBay proxy URL. Add one in extension options before searching.',
     };
   }
 
@@ -152,7 +165,8 @@ async function searchEbayListings(payload = {}) {
 
     const response = await searchEbayBrowse({
       query: candidateQuery,
-      token: activeSettings.ebayApplicationToken,
+      backendBaseUrl: activeSettings.ebayProxyBaseUrl,
+      proxyAccessKey: activeSettings.proxyAccessKey || '',
       marketplaceId: activeSettings.ebayMarketplaceId || DEFAULT_SETTINGS.ebayMarketplaceId,
       limit: searchLimit,
       endUserZip: activeSettings.endUserZip || '',
@@ -199,7 +213,8 @@ async function searchEbayListings(payload = {}) {
   const matches = typeof enrichEbayMatches === 'function'
     ? await enrichEbayMatches({
       matches: dedupedMatches,
-      token: activeSettings.ebayApplicationToken,
+      backendBaseUrl: activeSettings.ebayProxyBaseUrl,
+      proxyAccessKey: activeSettings.proxyAccessKey || '',
       marketplaceId: activeSettings.ebayMarketplaceId || DEFAULT_SETTINGS.ebayMarketplaceId,
       endUserZip: activeSettings.endUserZip || '',
       topN: ENRICH_TOP_MATCHES,
@@ -222,6 +237,21 @@ async function searchEbayListings(payload = {}) {
       returnedCount: rankedMatches.length,
     },
   };
+}
+
+async function migrateStoredSettings() {
+  const { settings } = await chrome.storage.local.get(['settings']);
+  const sanitizedSettings = typeof sanitizeSettings === 'function'
+    ? sanitizeSettings(settings || {})
+    : { ...DEFAULT_SETTINGS, ...(settings || {}) };
+
+  if (settings?.ebayApplicationToken || hasSettingsDrift(settings, sanitizedSettings)) {
+    await chrome.storage.local.set({ settings: sanitizedSettings });
+  }
+}
+
+function hasSettingsDrift(rawSettings = {}, sanitizedSettings = {}) {
+  return Object.keys(DEFAULT_SETTINGS).some((key) => rawSettings?.[key] !== sanitizedSettings?.[key]);
 }
 
 function buildCandidateQueries({ payloadQuery, sourceInput, buildQueryVariants }) {

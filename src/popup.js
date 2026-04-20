@@ -1,5 +1,6 @@
 const DEFAULT_SETTINGS = {
-  ebayApplicationToken: '',
+  ebayProxyBaseUrl: '',
+  proxyAccessKey: '',
   ebayMarketplaceId: 'EBAY_US',
   ebayLimit: 10,
   endUserZip: '',
@@ -9,6 +10,8 @@ const DEFAULT_SETTINGS = {
   defaultState: '',
   ...(globalThis.MarketMatchLib?.DEFAULT_SETTINGS || {}),
 };
+const sanitizeSettings = globalThis.MarketMatchLib?.sanitizeSettings;
+const fetchProxyHealth = globalThis.MarketMatchLib?.fetchProxyHealth;
 
 const titleInput = document.getElementById('title');
 const descriptionInput = document.getElementById('description');
@@ -32,6 +35,7 @@ const sourceListingSummaryNode = document.getElementById('sourceListingSummary')
 const apiStatusNode = document.getElementById('apiStatus');
 
 let currentSettings = { ...DEFAULT_SETTINGS };
+let currentProxyHealth = { state: 'missing' };
 let currentSourceListing = null;
 let currentResults = [];
 let sourceSyncTimer = null;
@@ -39,6 +43,7 @@ let lastSearchSourceSignature = '';
 let activeSearchRequestId = 0;
 let sourceSyncRevision = 0;
 let activeSourceSyncPromise = Promise.resolve();
+let activeProxyStatusRequestId = 0;
 
 const FILTER_DEFAULTS = {
   distanceScope: 'any',
@@ -81,7 +86,9 @@ async function bootstrap() {
     'settings',
   ]);
 
-  const effectiveSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  const effectiveSettings = typeof sanitizeSettings === 'function'
+    ? sanitizeSettings(settings || {})
+    : { ...DEFAULT_SETTINGS, ...(settings || {}) };
   currentSettings = effectiveSettings;
   currentSourceListing = sourceListing || null;
   currentResults = results || [];
@@ -98,12 +105,11 @@ async function bootstrap() {
     render({ message: 'Source changed since the last search. Re-run search for fresh matches.' });
     renderedSourceChangeWarning = true;
   }
-  renderStatusPills(filters, consent, effectiveSettings);
   renderHistorySummary(history || []);
   renderResultsSummary(currentResults);
   renderResultsMeta();
   renderSourceListingSummary(readCurrentSourceListing());
-  renderApiStatus(effectiveSettings);
+  await refreshProxyStatus(filters, consent, effectiveSettings);
 
   if (history?.length && !renderedSourceChangeWarning) {
     render({ recentHistory: history.slice(0, 5) });
@@ -194,7 +200,7 @@ async function captureCurrentListing() {
     query: buildDraftQuery(),
     url: response.url || tab.url || '',
   });
-  renderStatusPills(await getSavedFilters(), await getSavedConsent(), currentSettings);
+  renderStatusPills(await getSavedFilters(), await getSavedConsent(), currentSettings, currentProxyHealth);
   render(response);
 }
 
@@ -236,7 +242,7 @@ async function searchEbayMatches() {
     });
   } catch {
     if (requestId !== activeSearchRequestId) return;
-    render({ error: 'The background search failed before eBay returned results. Check your token and reload the extension.' });
+    render({ error: 'The background search failed before your eBay proxy returned results. Check your proxy settings and reload the extension.' });
     return;
   }
 
@@ -281,7 +287,9 @@ async function searchEbayMatches() {
 async function applyFilters() {
   const saved = await getSavedFilters();
   const { settings } = await chrome.storage.local.get(['settings']);
-  const effectiveSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  const effectiveSettings = typeof sanitizeSettings === 'function'
+    ? sanitizeSettings(settings || {})
+    : { ...DEFAULT_SETTINGS, ...(settings || {}) };
   currentSettings = effectiveSettings;
 
   const filters = {
@@ -304,7 +312,7 @@ async function applyFilters() {
 
   await chrome.storage.local.set({ filters });
   await persistDraft();
-  renderStatusPills(filters, await getSavedConsent(), effectiveSettings);
+  await refreshProxyStatus(filters, await getSavedConsent(), effectiveSettings);
   render({ message: 'Saved Facebook-to-eBay comparison filters.' });
 }
 
@@ -342,7 +350,7 @@ async function saveConsent(allowed) {
 
   await chrome.storage.local.set({ consent });
   updateConsentUI(consent);
-  renderStatusPills(await getSavedFilters(), consent, currentSettings);
+  renderStatusPills(await getSavedFilters(), consent, currentSettings, currentProxyHealth);
   render({ consent });
 }
 
@@ -364,10 +372,66 @@ function render(value) {
   resultsNode.textContent = JSON.stringify(value, null, 2);
 }
 
-function renderApiStatus(settings = {}) {
-  apiStatusNode.textContent = settings?.ebayApplicationToken
-    ? `eBay token configured for ${settings.ebayMarketplaceId || 'EBAY_US'}${settings.endUserZip ? ` · ZIP ${settings.endUserZip}` : ''}`
-    : 'No eBay token configured yet. Add one in Options before searching.';
+async function refreshProxyStatus(filters = {}, consent = {}, settings = {}) {
+  const requestId = ++activeProxyStatusRequestId;
+
+  if (!settings?.ebayProxyBaseUrl) {
+    currentProxyHealth = { state: 'missing' };
+    renderStatusPills(filters, consent, settings, currentProxyHealth);
+    renderApiStatus(settings, currentProxyHealth);
+    return;
+  }
+
+  currentProxyHealth = { state: 'loading' };
+  renderStatusPills(filters, consent, settings, currentProxyHealth);
+  renderApiStatus(settings, currentProxyHealth);
+
+  const proxyHealth = typeof fetchProxyHealth === 'function'
+    ? await fetchProxyHealth(settings)
+    : { state: 'unknown' };
+
+  if (requestId !== activeProxyStatusRequestId) {
+    return;
+  }
+
+  currentProxyHealth = proxyHealth;
+  renderStatusPills(filters, consent, settings, currentProxyHealth);
+  renderApiStatus(settings, currentProxyHealth);
+}
+
+function renderApiStatus(settings = {}, proxyHealth = currentProxyHealth) {
+  if (!settings?.ebayProxyBaseUrl) {
+    apiStatusNode.textContent = 'No eBay proxy configured yet. Add one in Options before searching.';
+    return;
+  }
+
+  const suffix = ` at ${settings.ebayProxyBaseUrl} for ${settings.ebayMarketplaceId || 'EBAY_US'}${settings.endUserZip ? ` · ZIP ${settings.endUserZip}` : ''}`;
+  if (proxyHealth?.state === 'loading') {
+    apiStatusNode.textContent = `Checking eBay proxy health${suffix}`;
+    return;
+  }
+
+  if (proxyHealth?.state === 'ok' && proxyHealth.ready) {
+    apiStatusNode.textContent = `Proxy ready${suffix}${proxyHealth.environment ? ` · ${proxyHealth.environment}` : ''}`;
+    return;
+  }
+
+  if (proxyHealth?.state === 'ok') {
+    apiStatusNode.textContent = `Proxy reachable, but eBay credentials are missing on the server${suffix}`;
+    return;
+  }
+
+  if (proxyHealth?.status === 401) {
+    apiStatusNode.textContent = `Proxy reachable, but the access key was rejected${suffix}`;
+    return;
+  }
+
+  if (proxyHealth?.status === 429) {
+    apiStatusNode.textContent = `Proxy is rate limited right now${suffix}`;
+    return;
+  }
+
+  apiStatusNode.textContent = `Proxy unreachable${proxyHealth?.error ? `: ${proxyHealth.error}` : ''}${suffix}`;
 }
 
 function renderResultsMeta(queryAttempts = [], selectedQuery = '', matchCount = null) {
@@ -512,11 +576,11 @@ function renderResultsDiagnostics(evaluations = [], passedCount = 0) {
   resultsDiagnosticsNode.textContent = `${excluded.length} filtered out · ${shownLabel}${reasonSummary ? ` · ${reasonSummary}` : ''}`;
 }
 
-function renderStatusPills(filters = {}, consent = {}, settings = {}) {
+function renderStatusPills(filters = {}, consent = {}, settings = {}, proxyHealth = currentProxyHealth) {
   const pills = [
     'Facebook Source',
     'eBay API',
-    settings?.ebayApplicationToken ? 'Token Ready' : 'Token Missing',
+    describeProxyStatusPill(settings, proxyHealth),
     consent?.historyAllowed ? 'History Enabled' : 'History Off',
     filters?.freeShippingOnly ? 'Free Ship Only' : 'Any Shipping',
     filters?.includeAuctionOnly ? 'Auctions Included' : 'Fixed Price Focus',
@@ -526,6 +590,17 @@ function renderStatusPills(filters = {}, consent = {}, settings = {}) {
   ];
 
   statusPillsNode.innerHTML = pills.map((pill) => `<span class="pill">${escapeHtml(pill)}</span>`).join('');
+}
+
+function describeProxyStatusPill(settings = {}, proxyHealth = currentProxyHealth) {
+  if (!settings?.ebayProxyBaseUrl) return 'Proxy Missing';
+  if (proxyHealth?.state === 'loading') return 'Proxy Checking';
+  if (proxyHealth?.state === 'ok' && proxyHealth.ready) return 'Proxy Ready';
+  if (proxyHealth?.state === 'ok') return 'Proxy Missing eBay Config';
+  if (proxyHealth?.status === 401) return 'Proxy Auth Rejected';
+  if (proxyHealth?.status === 429) return 'Proxy Rate Limited';
+  if (proxyHealth?.state === 'error') return 'Proxy Unreachable';
+  return 'Proxy Configured';
 }
 
 async function persistDraft() {

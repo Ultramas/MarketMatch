@@ -21,17 +21,24 @@
     <div class="wrap">
       <div class="card">
         <h1>MarketMatch Options</h1>
-        <div class="muted">Frontend-only Facebook source capture plus eBay Browse API search.</div>
+        <div class="muted">Firefox extension plus a private backend proxy for eBay access.</div>
       </div>
 
       <div class="card">
-        <h2>eBay API Settings</h2>
-        <div class="muted">Paste an eBay application access token generated outside the extension. The extension does not mint tokens because that would require securely handling an eBay client secret.</div>
+        <h2>eBay Proxy Settings</h2>
+        <div class="muted">Keep your eBay client secret on your backend. The extension stores the proxy URL, an optional proxy access key, and comparison defaults. Firefox will request host access for that backend origin when you save it.</div>
 
         <label>
-          eBay application token
-          <textarea id="ebayApplicationToken" placeholder="Paste your Bearer token here"></textarea>
+          Backend base URL
+          <input id="ebayProxyBaseUrl" type="url" placeholder="http://localhost:8787" />
         </label>
+
+        <label>
+          Proxy access key
+          <input id="proxyAccessKey" type="password" value="" placeholder="optional for localhost" autocomplete="off" />
+        </label>
+
+        <div class="muted">Stored locally in Firefox and sent only to your configured proxy. Use an access key and HTTPS for non-local proxy URLs.</div>
 
         <label>
           Marketplace ID

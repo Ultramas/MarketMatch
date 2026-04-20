@@ -1,0 +1,12 @@
+{
+  "name": "marketmatch-ebay-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}

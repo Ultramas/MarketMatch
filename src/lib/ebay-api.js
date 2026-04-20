@@ -3,7 +3,8 @@
 
   lib.searchEbayBrowse = async function searchEbayBrowse({
     query,
-    token,
+    backendBaseUrl,
+    proxyAccessKey = '',
     marketplaceId = 'EBAY_US',
     limit = 10,
     endUserZip = '',
@@ -19,16 +20,19 @@
       params.set('filter', `buyingOptions:{${buyingOptionFilter}}`);
     }
 
-    const headers = buildHeaders({ token, marketplaceId, endUserZip });
+    params.set('marketplaceId', marketplaceId);
+    if (endUserZip) {
+      params.set('endUserZip', endUserZip);
+    }
 
-    const response = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${params.toString()}`, {
+    const response = await fetch(buildProxyEndpoint(backendBaseUrl, '/api/ebay/search', params), {
       method: 'GET',
-      headers,
+      headers: buildProxyRequestHeaders({ proxyAccessKey }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`eBay API error ${response.status}: ${errorText}`);
+      throw new Error(`eBay proxy error ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
@@ -43,23 +47,27 @@
     };
   };
 
-  lib.getEbayBrowseItem = async function getEbayBrowseItem({ itemId, token, marketplaceId = 'EBAY_US', endUserZip = '' }) {
-    const headers = buildHeaders({ token, marketplaceId, endUserZip });
-    const response = await fetch(`https://api.ebay.com/buy/browse/v1/item/${encodeURIComponent(itemId)}`, {
+  lib.getEbayBrowseItem = async function getEbayBrowseItem({ itemId, backendBaseUrl, proxyAccessKey = '', marketplaceId = 'EBAY_US', endUserZip = '' }) {
+    const params = new URLSearchParams({ marketplaceId });
+    if (endUserZip) {
+      params.set('endUserZip', endUserZip);
+    }
+
+    const response = await fetch(buildProxyEndpoint(backendBaseUrl, `/api/ebay/item/${encodeURIComponent(itemId)}`, params), {
       method: 'GET',
-      headers,
+      headers: buildProxyRequestHeaders({ proxyAccessKey }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`eBay item API error ${response.status}: ${errorText}`);
+      throw new Error(`eBay proxy item error ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
     return mapItemDetails(data);
   };
 
-  lib.enrichEbayMatches = async function enrichEbayMatches({ matches = [], token, marketplaceId = 'EBAY_US', endUserZip = '', topN = 3 }) {
+  lib.enrichEbayMatches = async function enrichEbayMatches({ matches = [], backendBaseUrl, proxyAccessKey = '', marketplaceId = 'EBAY_US', endUserZip = '', topN = 3 }) {
     const limit = Math.max(0, Math.min(Number(topN) || 0, matches.length));
     const enriched = await Promise.all(matches.map(async (match, index) => {
       if (index >= limit || !match.id) {
@@ -69,7 +77,8 @@
       try {
         const detail = await lib.getEbayBrowseItem({
           itemId: match.id,
-          token,
+          backendBaseUrl,
+          proxyAccessKey,
           marketplaceId,
           endUserZip,
         });
@@ -181,18 +190,30 @@
     return shipToHome || shippingOptions[0] || null;
   }
 
-  function buildHeaders({ token, marketplaceId, endUserZip }) {
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-      'X-EBAY-C-MARKETPLACE-ID': marketplaceId,
-    };
-
-    if (endUserZip) {
-      headers['X-EBAY-C-ENDUSERCTX'] = `contextualLocation=country=US,zip=${encodeURIComponent(endUserZip)}`;
+  function buildProxyEndpoint(baseUrl, pathname, params = null) {
+    const normalizedBaseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+    if (!normalizedBaseUrl) {
+      throw new Error('Missing eBay proxy URL.');
     }
 
-    return headers;
+    const url = new URL(normalizedBaseUrl);
+    const basePath = url.pathname.replace(/\/+$/, '');
+    url.pathname = `${basePath}${pathname}`.replace(/\/+/g, '/');
+    url.search = params instanceof URLSearchParams ? params.toString() : '';
+    return url.toString();
+  }
+
+  function buildProxyRequestHeaders(settings = {}) {
+    const builder = lib.buildProxyRequestHeaders;
+    if (typeof builder === 'function') {
+      return builder(settings);
+    }
+
+    const proxyAccessKey = String(settings?.proxyAccessKey || '').trim();
+    return {
+      'X-MarketMatch-Client': 'extension',
+      ...(proxyAccessKey ? { 'X-MarketMatch-Proxy-Key': proxyAccessKey } : {}),
+    };
   }
 
   function mergeMatchWithDetail(match, detail) {
