@@ -7,12 +7,17 @@
     marketplaceId = 'EBAY_US',
     limit = 10,
     endUserZip = '',
+    buyingOptionFilter = '',
   }) {
     const params = new URLSearchParams({
       q: query,
       limit: String(Math.min(Math.max(Number(limit) || 10, 1), 20)),
       fieldgroups: 'EXTENDED',
     });
+
+    if (buyingOptionFilter) {
+      params.set('filter', `buyingOptions:{${buyingOptionFilter}}`);
+    }
 
     const headers = buildHeaders({ token, marketplaceId, endUserZip });
 
@@ -33,6 +38,7 @@
         href: data.href || '',
         total: data.total || 0,
         limit: data.limit || 0,
+        buyingOptionFilter,
       },
     };
   };

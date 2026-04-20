@@ -140,16 +140,23 @@ async function searchEbayListings(payload = {}) {
     sellerStandingBoost: payload.sellerStandingBoost !== false,
     sourceListing,
   };
+  const preferFixedPrice = payload.includeAuctionOnly !== true;
   const searchAttempts = [];
   const matchMap = new Map();
 
-  for (const candidateQuery of candidateQueries.slice(0, MAX_QUERY_ATTEMPTS)) {
+  for (const searchPlan of buildSearchPlans(candidateQueries.slice(0, MAX_QUERY_ATTEMPTS), { preferFixedPrice })) {
+    const { query: candidateQuery, buyingOptionFilter, mode } = searchPlan;
+    if (mode === 'broad-fallback' && shouldSkipBroadFallback(searchAttempts, candidateQuery, searchLimit)) {
+      continue;
+    }
+
     const response = await searchEbayBrowse({
       query: candidateQuery,
       token: activeSettings.ebayApplicationToken,
       marketplaceId: activeSettings.ebayMarketplaceId || DEFAULT_SETTINGS.ebayMarketplaceId,
       limit: searchLimit,
       endUserZip: activeSettings.endUserZip || '',
+      buyingOptionFilter,
     });
 
     const attemptMatches = (response.matches || []).map((match) => attachQueryVariant(match, candidateQuery));
@@ -158,6 +165,8 @@ async function searchEbayListings(payload = {}) {
 
     searchAttempts.push({
       query: candidateQuery,
+      mode,
+      buyingOptionFilter,
       returned: attemptMatches.length,
       total: Number(response.requestMeta?.total || 0),
       topConfidence: attemptSummary.topConfidence,
@@ -238,6 +247,19 @@ function buildSearchSourceListing(sourceListing = {}, sourceInput = {}) {
     title: sourceInput.title || sourceListing?.title || '',
     description: sourceInput.description || sourceListing?.description || '',
   };
+}
+
+function buildSearchPlans(candidateQueries = [], { preferFixedPrice = true } = {}) {
+  const plans = [];
+
+  for (const query of candidateQueries) {
+    if (preferFixedPrice) {
+      plans.push({ query, buyingOptionFilter: 'FIXED_PRICE', mode: 'fixed-price-first' });
+    }
+    plans.push({ query, buyingOptionFilter: '', mode: preferFixedPrice ? 'broad-fallback' : 'broad' });
+  }
+
+  return plans;
 }
 
 function attachQueryVariant(match, query) {
@@ -352,6 +374,19 @@ function summarizeSearchAttempt(matches = []) {
       + Math.max(0, 6 - (index * 2))
     ), 0),
   };
+}
+
+function isGoodEnoughAttempt(attemptSummary = {}, searchLimit = 0) {
+  return Number(attemptSummary.topConfidence || 0) >= HIGH_CONFIDENCE_MATCH
+    || Number(attemptSummary.strongMatches || 0) >= Math.min(Math.max(1, searchLimit), 2);
+}
+
+function shouldSkipBroadFallback(searchAttempts = [], query = '', searchLimit = 0) {
+  const fixedAttempt = [...searchAttempts].reverse().find((attempt) => (
+    attempt?.query === query && attempt?.mode === 'fixed-price-first'
+  ));
+
+  return Boolean(fixedAttempt && isGoodEnoughAttempt(fixedAttempt, searchLimit));
 }
 
 function shouldStopSearching(matchMap, { rankResults, rankingOptions, searchLimit }) {

@@ -225,6 +225,7 @@ async function searchEbayMatches() {
       payload: {
         query,
         ...sourceInput,
+        includeAuctionOnly: includeAuctionOnlyInput.checked,
         sellerStandingBoost: sellerStandingBoostInput.checked,
         sourceListing: activeSourceListing,
         sourcePlatform: 'facebook',
@@ -377,7 +378,9 @@ function renderResultsMeta(queryAttempts = [], selectedQuery = '', matchCount = 
   const usedQuery = selectedQuery || queryAttempts[0]?.query || '';
   const countLabel = matchCount == null ? '' : ` · ${matchCount} matches after dedupe`;
   const queryLabel = queryAttempts.length > 1 ? 'best search variant' : 'query';
-  resultsMetaNode.textContent = `${attemptLabel}${countLabel}${usedQuery ? ` · ${queryLabel}: ${usedQuery}` : ''}`;
+  const fixedPriceAttempted = queryAttempts.some((attempt) => attempt?.mode === 'fixed-price-first');
+  const modeLabel = fixedPriceAttempted ? ' · fixed-price first' : '';
+  resultsMetaNode.textContent = `${attemptLabel}${countLabel}${modeLabel}${usedQuery ? ` · ${queryLabel}: ${usedQuery}` : ''}`;
 }
 
 function renderResultsSummary(results = []) {
