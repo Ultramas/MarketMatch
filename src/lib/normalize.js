@@ -144,12 +144,24 @@
       quantity: extractQuantitySignal(cleaned),
       sizeFamily: extractSizeSignal(cleaned),
       identifiers: extractModelIdentifiers(cleaned),
+      roleSignal: extractRoleSignal(cleaned),
     };
   }
 
   function compareVariantSignals({ sourceSignals, candidateSignals }) {
     const mismatches = [];
     let penalty = 0;
+
+    if (sourceSignals.roleSignal?.key !== candidateSignals.roleSignal?.key) {
+      const roleMismatch = buildRoleMismatch(sourceSignals.roleSignal, candidateSignals.roleSignal);
+      if (roleMismatch) {
+        penalty += roleMismatch.penalty;
+        mismatches.push({
+          type: 'role',
+          label: roleMismatch.label,
+        });
+      }
+    }
 
     const sourceDominantStorage = readDominantStorage(sourceSignals.storageValues);
     const candidateDominantStorage = readDominantStorage(candidateSignals.storageValues);
@@ -276,8 +288,40 @@
     ).slice(0, 4);
   }
 
-  function formatSignalList(items = []) {
-    return items.map((item) => item.label).filter(Boolean).join(', ');
+  function extractRoleSignal(text) {
+    const rolePatterns = [
+      { key: 'parts-only', label: 'for parts / not working', pattern: /\b(for parts|parts only|not working|broken|as is)\b/ },
+      { key: 'box-only', label: 'box only', pattern: /\b(box only|empty box)\b/ },
+      { key: 'case-only', label: 'case only', pattern: /\b(case only|cover only|shell only)\b/ },
+      { key: 'remote-only', label: 'remote only', pattern: /\bremote only\b/ },
+      { key: 'manual-only', label: 'manual only', pattern: /\bmanual only\b/ },
+      { key: 'headboard-only', label: 'headboard only', pattern: /\bheadboard only\b/ },
+    ];
+
+    return rolePatterns.find((entry) => entry.pattern.test(text)) || null;
+  }
+
+  function buildRoleMismatch(sourceRole, candidateRole) {
+    if (!sourceRole && !candidateRole) return null;
+
+    if (!sourceRole && candidateRole) {
+      return {
+        label: `Possible item mismatch: eBay title looks like ${candidateRole.label}`,
+        penalty: 28,
+      };
+    }
+
+    if (sourceRole && !candidateRole) {
+      return {
+        label: `Possible item mismatch: source looks like ${sourceRole.label}`,
+        penalty: 18,
+      };
+    }
+
+    return {
+      label: `Possible item mismatch: ${sourceRole.label} vs ${candidateRole.label}`,
+      penalty: 24,
+    };
   }
 
   function readDominantStorage(items = []) {
