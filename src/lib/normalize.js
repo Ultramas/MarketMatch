@@ -11,8 +11,59 @@
     'case', 'cover', 'shell', 'box', 'manual', 'remote', 'headboard', 'parts', 'broken'
   ]);
 
+  const STATE_ALIASES = new Map(Object.entries({
+    alabama: 'al', alaska: 'ak', arizona: 'az', arkansas: 'ar', california: 'ca', colorado: 'co',
+    connecticut: 'ct', delaware: 'de', florida: 'fl', georgia: 'ga', hawaii: 'hi', idaho: 'id',
+    illinois: 'il', indiana: 'in', iowa: 'ia', kansas: 'ks', kentucky: 'ky', louisiana: 'la',
+    maine: 'me', maryland: 'md', massachusetts: 'ma', michigan: 'mi', minnesota: 'mn', mississippi: 'ms',
+    missouri: 'mo', montana: 'mt', nebraska: 'ne', nevada: 'nv', 'new hampshire': 'nh', 'new jersey': 'nj',
+    'new mexico': 'nm', 'new york': 'ny', 'north carolina': 'nc', 'north dakota': 'nd', ohio: 'oh',
+    oklahoma: 'ok', oregon: 'or', pennsylvania: 'pa', 'rhode island': 'ri', 'south carolina': 'sc',
+    'south dakota': 'sd', tennessee: 'tn', texas: 'tx', utah: 'ut', vermont: 'vt', virginia: 'va',
+    washington: 'wa', 'west virginia': 'wv', wisconsin: 'wi', wyoming: 'wy', 'district of columbia': 'dc',
+    dc: 'dc', al: 'al', ak: 'ak', az: 'az', ar: 'ar', ca: 'ca', co: 'co', ct: 'ct', de: 'de', fl: 'fl', ga: 'ga',
+    hi: 'hi', id: 'id', il: 'il', in: 'in', ia: 'ia', ks: 'ks', ky: 'ky', la: 'la', me: 'me', md: 'md', ma: 'ma',
+    mi: 'mi', mn: 'mn', ms: 'ms', mo: 'mo', mt: 'mt', ne: 'ne', nv: 'nv', nh: 'nh', nj: 'nj', nm: 'nm', ny: 'ny',
+    nc: 'nc', nd: 'nd', oh: 'oh', ok: 'ok', or: 'or', pa: 'pa', ri: 'ri', sc: 'sc', sd: 'sd', tn: 'tn', tx: 'tx',
+    ut: 'ut', vt: 'vt', va: 'va', wa: 'wa', wv: 'wv', wi: 'wi', wy: 'wy'
+  }));
+
+  const COUNTRY_ALIASES = new Map(Object.entries({
+    usa: 'us', us: 'us', 'u s a': 'us', 'united states': 'us', 'united states of america': 'us',
+    canada: 'ca', mexico: 'mx', mx: 'mx'
+  }));
+
   lib.buildQuery = function buildQuery({ brand, title, description }) {
     return lib.normalizeSearchInput({ brand, title, description }).query;
+  };
+
+  lib.normalizeLocationText = function normalizeLocationText(locationText, { fallbackState = '', fallbackCountry = '' } = {}) {
+    const cleaned = cleanFragment(String(locationText || '').toLowerCase())
+      .replace(/\b(local pickup|pickup only|pick up only|ships to you|shipping available|delivery available|meetup|meet up|meet in|nearby)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleaned) {
+      const state = normalizeStateToken(fallbackState);
+      const country = normalizeCountryToken(fallbackCountry);
+      return { raw: '', city: '', state, country, hasSignal: Boolean(state || country) };
+    }
+
+    const parts = cleaned
+      .split(/[•|,]/)
+      .map((part) => normalizeLocationPart(part))
+      .filter(Boolean);
+    const state = readStateFromParts(parts) || normalizeStateToken(fallbackState);
+    const country = readCountryFromParts(parts) || normalizeCountryToken(fallbackCountry);
+    const city = readCityFromParts(parts);
+
+    return {
+      raw: cleaned,
+      city,
+      state,
+      country,
+      hasSignal: Boolean(city || state || country),
+    };
   };
 
   lib.buildQueryVariants = function buildQueryVariants({ brand, title, description }) {
@@ -135,6 +186,49 @@
       .replace(/[^a-zA-Z0-9\-\s]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  function normalizeLocationPart(part) {
+    return cleanFragment(String(part || '').toLowerCase().replace(/[()]/g, ' '))
+      .replace(/\bships to you\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function readStateFromParts(parts = []) {
+    for (const part of parts) {
+      const normalized = normalizeStateToken(part);
+      if (normalized) return normalized;
+    }
+    return '';
+  }
+
+  function readCountryFromParts(parts = []) {
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+      const normalized = normalizeCountryToken(parts[index]);
+      if (normalized) return normalized;
+    }
+    return '';
+  }
+
+  function readCityFromParts(parts = []) {
+    return parts.find((part) => (
+      part
+      && !normalizeStateToken(part)
+      && !normalizeCountryToken(part)
+      && /[a-z]/.test(part)
+      && !/\b(ships|pickup|delivery|available|meet)\b/.test(part)
+    )) || '';
+  }
+
+  function normalizeStateToken(value) {
+    const cleaned = normalizeLocationPart(value).replace(/\./g, '');
+    return STATE_ALIASES.get(cleaned) || '';
+  }
+
+  function normalizeCountryToken(value) {
+    const cleaned = normalizeLocationPart(value).replace(/\./g, '');
+    return COUNTRY_ALIASES.get(cleaned) || '';
   }
 
   function tokenize(value) {

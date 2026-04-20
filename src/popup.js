@@ -802,23 +802,28 @@ function passesDistanceFilter(result, sourceListing) {
   const scope = distanceScopeInput.value;
   if (scope === 'any') return true;
 
-  const sourceLocation = String(sourceListing?.locationText || '').toLowerCase();
-  const resultLocation = String(result.locationText || '').toLowerCase();
-  if (!sourceLocation || !resultLocation) return false;
+  const normalizeLocationText = globalThis.MarketMatchLib?.normalizeLocationText;
+  if (typeof normalizeLocationText !== 'function') return true;
+
+  const sourceLocation = normalizeLocationText(sourceListing?.locationText, {
+    fallbackState: userStateInput.value.trim(),
+  });
+  const resultLocation = normalizeLocationText(result.locationText);
+  if (!sourceLocation.hasSignal || !resultLocation.hasSignal) return false;
 
   if (scope === 'city') {
-    const sourceCity = sourceLocation.split(',')[0]?.trim();
-    return Boolean(sourceCity) && resultLocation.includes(sourceCity);
+    return Boolean(sourceLocation.city)
+      && Boolean(resultLocation.city)
+      && sourceLocation.city === resultLocation.city
+      && (!sourceLocation.state || !resultLocation.state || sourceLocation.state === resultLocation.state);
   }
 
   if (scope === 'state') {
-    const state = userStateInput.value.trim().toLowerCase() || extractStateToken(sourceLocation);
-    return Boolean(state) && resultLocation.includes(state);
+    return Boolean(sourceLocation.state) && sourceLocation.state === resultLocation.state;
   }
 
   if (scope === 'country') {
-    const country = extractCountryToken(sourceLocation);
-    return Boolean(country) && resultLocation.includes(country);
+    return Boolean(sourceLocation.country) && sourceLocation.country === resultLocation.country;
   }
 
   return true;
@@ -879,16 +884,6 @@ function detectPlatformFromUrl(url = '') {
 
 function readCurrentSourceListing() {
   return buildActiveSourceListing();
-}
-
-function extractStateToken(locationText) {
-  const parts = String(locationText || '').split(',').map((part) => part.trim()).filter(Boolean);
-  return parts[1]?.toLowerCase() || '';
-}
-
-function extractCountryToken(locationText) {
-  const parts = String(locationText || '').split(',').map((part) => part.trim()).filter(Boolean);
-  return parts[parts.length - 1]?.toLowerCase() || '';
 }
 
 function formatCurrencyOrUnknown(value) {

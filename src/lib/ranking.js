@@ -266,25 +266,24 @@
   }
 
   function compareLocation(sourceLocation, resultLocation) {
-    const source = String(sourceLocation || '').toLowerCase().trim();
-    const result = String(resultLocation || '').toLowerCase().trim();
-    if (!source || !result) {
+    const normalizeLocationText = lib.normalizeLocationText;
+    if (typeof normalizeLocationText !== 'function') {
       return { value: 'unknown', label: '', isMismatch: false };
     }
 
-    const sourceParts = source.split(',').map((part) => part.trim()).filter(Boolean);
-    const resultParts = result.split(',').map((part) => part.trim()).filter(Boolean);
-    const sourceCity = sourceParts[0] || '';
-    const sourceState = sourceParts[1] || '';
-    const sourceCountry = sourceParts[sourceParts.length - 1] || '';
+    const source = normalizeLocationText(sourceLocation);
+    const result = normalizeLocationText(resultLocation);
+    if (!source.hasSignal || !result.hasSignal) {
+      return { value: 'unknown', label: '', isMismatch: false };
+    }
 
-    if (sourceCity && result.includes(sourceCity)) {
+    if (source.city && result.city && source.city === result.city && (!source.state || !result.state || source.state === result.state)) {
       return { value: 'same-city', label: 'Location is close to source', isMismatch: false };
     }
-    if (sourceState && result.includes(sourceState)) {
+    if (source.state && result.state && source.state === result.state) {
       return { value: 'same-state', label: 'Same state as source', isMismatch: false };
     }
-    if (sourceCountry && resultParts[resultParts.length - 1] === sourceCountry) {
+    if (source.country && result.country && source.country === result.country) {
       return { value: 'same-country', label: 'Same country as source', isMismatch: false };
     }
     return { value: 'different', label: 'Location differs from source', isMismatch: true };
