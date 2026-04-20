@@ -16,6 +16,7 @@ const brandInput = document.getElementById('brand');
 const distanceScopeInput = document.getElementById('distanceScope');
 const userStateInput = document.getElementById('userState');
 const freeShippingOnlyInput = document.getElementById('freeShippingOnly');
+const includeAuctionOnlyInput = document.getElementById('includeAuctionOnly');
 const brandRequiredInput = document.getElementById('brandRequired');
 const sellerStandingBoostInput = document.getElementById('sellerStandingBoost');
 const consentCard = document.getElementById('consentCard');
@@ -42,6 +43,7 @@ const FILTER_DEFAULTS = {
   brandRequired: false,
   brand: '',
   freeShippingOnly: false,
+  includeAuctionOnly: false,
   minPositiveRatings: 5,
   maxNegativeRatioDivisor: 5,
   sellerStandingBoost: true,
@@ -287,6 +289,7 @@ async function applyFilters() {
     brandRequired: brandRequiredInput.checked,
     brand: brandInput.value.trim(),
     freeShippingOnly: freeShippingOnlyInput.checked,
+    includeAuctionOnly: includeAuctionOnlyInput.checked,
     sellerStandingBoost: sellerStandingBoostInput.checked,
     userState: userStateInput.value.trim() || effectiveSettings.defaultState || '',
   };
@@ -478,6 +481,7 @@ function renderStatusPills(filters = {}, consent = {}, settings = {}) {
     settings?.ebayApplicationToken ? 'Token Ready' : 'Token Missing',
     consent?.historyAllowed ? 'History Enabled' : 'History Off',
     filters?.freeShippingOnly ? 'Free Ship Only' : 'Any Shipping',
+    filters?.includeAuctionOnly ? 'Auctions Included' : 'Fixed Price Focus',
     filters?.sellerStandingBoost !== false ? 'Seller Boost On' : 'Seller Boost Off',
   ];
 
@@ -513,6 +517,7 @@ function restoreFilters(filters = {}, settings = {}) {
   distanceScopeInput.value = merged.distanceScope;
   userStateInput.value = merged.userState;
   freeShippingOnlyInput.checked = Boolean(merged.freeShippingOnly);
+  includeAuctionOnlyInput.checked = Boolean(merged.includeAuctionOnly);
   brandRequiredInput.checked = Boolean(merged.brandRequired);
   sellerStandingBoostInput.checked = merged.sellerStandingBoost !== false;
 }
@@ -752,6 +757,10 @@ function filterAndRankResultsForDisplay(results) {
 
 function passesActiveFilters(result, sourceListing) {
   if (freeShippingOnlyInput.checked && Number(result.shipping) !== 0) {
+    return false;
+  }
+
+  if (!includeAuctionOnlyInput.checked && result.isAuctionOnly) {
     return false;
   }
 

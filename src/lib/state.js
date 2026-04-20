@@ -24,6 +24,7 @@
     brandRequired: false,
     brand: '',
     freeShippingOnly: false,
+    includeAuctionOnly: false,
     minPositiveRatings: lib.DEFAULT_SETTINGS.minPositiveRatings,
     maxNegativeRatioDivisor: lib.DEFAULT_SETTINGS.maxNegativeRatioDivisor,
     sellerStandingBoost: true,
