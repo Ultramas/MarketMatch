@@ -23,6 +23,7 @@ const sellerStandingBoostInput = document.getElementById('sellerStandingBoost');
 const consentCard = document.getElementById('consentCard');
 const resultsNode = document.getElementById('results');
 const resultsMetaNode = document.getElementById('resultsMeta');
+const resultsDiagnosticsNode = document.getElementById('resultsDiagnostics');
 const resultsSummaryNode = document.getElementById('resultsSummary');
 const historySummaryNode = document.getElementById('historySummary');
 const statusPillsNode = document.getElementById('statusPills');
@@ -385,11 +386,13 @@ function renderResultsMeta(queryAttempts = [], selectedQuery = '', matchCount = 
 
 function renderResultsSummary(results = []) {
   if (!results.length) {
+    renderResultsDiagnostics([]);
     resultsSummaryNode.innerHTML = `<div class="miniItem"><strong>No eBay matches yet</strong><div class="miniMeta">Capture a Facebook listing, then search eBay matches from the popup.</div></div>`;
     return;
   }
 
-  const rankedResults = filterAndRankResultsForDisplay(results);
+  const { rankedResults, evaluations } = evaluateResultsForDisplay(results);
+  renderResultsDiagnostics(evaluations, rankedResults.length);
   if (!rankedResults.length) {
     resultsSummaryNode.innerHTML = `<div class="miniItem"><strong>No matches passed the current filters</strong><div class="miniMeta">Relax shipping, brand, seller, or location filters and try again.</div></div>`;
     return;
@@ -478,6 +481,32 @@ function renderSourceListingSummary(sourceListing) {
       <div class="miniMeta">${escapeHtml(sourceListing.locationText || 'location unavailable')}${sourceListing.locationConfidence === 'weak' ? ' · location inferred' : ''}${sourceListing.bestOfferDetected ? ' · offer language detected' : ''}${sourceListing.placeholderPriceFlag ? ' · placeholder price flagged' : ''}${sourceListing.brand ? ` · brand ${escapeHtml(sourceListing.brand)}` : ''}</div>
     </div>
   `;
+}
+
+function renderResultsDiagnostics(evaluations = [], passedCount = 0) {
+  if (!resultsDiagnosticsNode) return;
+
+  const excluded = evaluations.filter((evaluation) => !evaluation.passed);
+  if (!excluded.length) {
+    resultsDiagnosticsNode.textContent = '';
+    return;
+  }
+
+  const reasonCounts = new Map();
+  for (const evaluation of excluded) {
+    for (const reason of evaluation.reasons) {
+      reasonCounts.set(reason, Number(reasonCounts.get(reason) || 0) + 1);
+    }
+  }
+
+  const reasonSummary = [...reasonCounts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 3)
+    .map(([reason, count]) => `${formatFilterReason(reason)} (${count})`)
+    .join(' · ');
+
+  const shownLabel = passedCount > 0 ? `${passedCount} shown` : 'none shown';
+  resultsDiagnosticsNode.textContent = `${excluded.length} filtered out · ${shownLabel}${reasonSummary ? ` · ${reasonSummary}` : ''}`;
 }
 
 function renderStatusPills(filters = {}, consent = {}, settings = {}) {
@@ -760,29 +789,38 @@ function rankResultsForDisplay(results) {
   });
 }
 
-function filterAndRankResultsForDisplay(results) {
+function evaluateResultsForDisplay(results) {
   const sourceListing = readCurrentSourceListing();
-  const filtered = results.filter((result) => passesActiveFilters(result, sourceListing));
-  return rankResultsForDisplay(filtered);
+  const evaluations = results.map((result) => evaluateResultAgainstFilters(result, sourceListing));
+  return {
+    evaluations,
+    rankedResults: rankResultsForDisplay(evaluations.filter((evaluation) => evaluation.passed).map((evaluation) => evaluation.result)),
+  };
 }
 
 function passesActiveFilters(result, sourceListing) {
+  return evaluateResultAgainstFilters(result, sourceListing).passed;
+}
+
+function evaluateResultAgainstFilters(result, sourceListing) {
+  const reasons = [];
+
   if (freeShippingOnlyInput.checked && Number(result.shipping) !== 0) {
-    return false;
+    reasons.push('free-shipping');
   }
 
   if (!includeAuctionOnlyInput.checked && result.isAuctionOnly) {
-    return false;
+    reasons.push('auction-only');
   }
 
   if (hideWorseConditionInput.checked && result?.comparisonSummary?.conditionComparison === 'clearly-worse') {
-    return false;
+    reasons.push('worse-condition');
   }
 
   if (brandRequiredInput.checked) {
     const brand = brandInput.value.trim().toLowerCase();
     if (brand && !String(result.title || '').toLowerCase().includes(brand)) {
-      return false;
+      reasons.push('brand-mismatch');
     }
   }
 
@@ -791,14 +829,18 @@ function passesActiveFilters(result, sourceListing) {
     minPositiveRatings: Number(currentSettings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings),
     maxNegativeRatioDivisor: Number(currentSettings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor),
   })) {
-    return false;
+    reasons.push('seller-threshold');
   }
 
   if (!passesDistanceFilter(result, sourceListing)) {
-    return false;
+    reasons.push(`distance-${distanceScopeInput.value}`);
   }
 
-  return true;
+  return {
+    result,
+    passed: reasons.length === 0,
+    reasons,
+  };
 }
 
 function passesDistanceFilter(result, sourceListing) {
@@ -845,6 +887,18 @@ function buildFlags(result) {
   if (priceBandComparison === 'far-below' || priceBandComparison === 'far-above') flags.push('Price Watchout');
   if (result.locationText) flags.push(result.locationText);
   return flags;
+}
+
+function formatFilterReason(reason) {
+  if (reason === 'free-shipping') return 'shipping filter';
+  if (reason === 'auction-only') return 'auction-only hidden';
+  if (reason === 'worse-condition') return 'worse-condition hidden';
+  if (reason === 'brand-mismatch') return 'brand mismatch';
+  if (reason === 'seller-threshold') return 'seller threshold';
+  if (reason === 'distance-city') return 'different city';
+  if (reason === 'distance-state') return 'different state';
+  if (reason === 'distance-country') return 'different country';
+  return 'other filter';
 }
 
 function describeQueryVariantHits(queryVariantHits) {
