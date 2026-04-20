@@ -1,3 +1,15 @@
+const DEFAULT_SETTINGS = {
+  ebayApplicationToken: '',
+  ebayMarketplaceId: 'EBAY_US',
+  ebayLimit: 10,
+  endUserZip: '',
+  minPositiveRatings: 5,
+  maxNegativeRatioDivisor: 5,
+  defaultTaxRate: 0,
+  defaultState: '',
+  ...(globalThis.MarketMatchLib?.DEFAULT_SETTINGS || {}),
+};
+
 const titleInput = document.getElementById('title');
 const descriptionInput = document.getElementById('description');
 const brandInput = document.getElementById('brand');
@@ -15,7 +27,7 @@ const statusPillsNode = document.getElementById('statusPills');
 const sourceListingSummaryNode = document.getElementById('sourceListingSummary');
 const apiStatusNode = document.getElementById('apiStatus');
 
-let currentSettings = {};
+let currentSettings = { ...DEFAULT_SETTINGS };
 let currentSourceListing = null;
 let currentResults = [];
 let sourceSyncTimer = null;
@@ -35,6 +47,7 @@ const FILTER_DEFAULTS = {
   sellerStandingBoost: true,
   userState: '',
   defaultTaxRate: 0,
+  ...(globalThis.MarketMatchLib?.DEFAULT_FILTERS || {}),
 };
 
 document.getElementById('captureListing').addEventListener('click', captureCurrentListing);
@@ -61,12 +74,13 @@ async function bootstrap() {
     'settings',
   ]);
 
-  currentSettings = settings || {};
+  const effectiveSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  currentSettings = effectiveSettings;
   currentSourceListing = sourceListing || null;
   currentResults = results || [];
   restoreDraft(draft);
   lastSearchSourceSignature = String(savedSearchSourceSignature || '');
-  restoreFilters(filters, settings);
+  restoreFilters(filters, effectiveSettings);
   updateConsentUI(consent);
   let renderedSourceChangeWarning = false;
   const activeSourceSignature = computeSourceSignature(readCurrentSourceListing());
@@ -77,12 +91,12 @@ async function bootstrap() {
     render({ message: 'Source changed since the last search. Re-run search for fresh matches.' });
     renderedSourceChangeWarning = true;
   }
-  renderStatusPills(filters, consent, settings);
+  renderStatusPills(filters, consent, effectiveSettings);
   renderHistorySummary(history || []);
   renderResultsSummary(currentResults);
   renderResultsMeta();
   renderSourceListingSummary(readCurrentSourceListing());
-  renderApiStatus(settings);
+  renderApiStatus(effectiveSettings);
 
   if (history?.length && !renderedSourceChangeWarning) {
     render({ recentHistory: history.slice(0, 5) });
@@ -207,6 +221,8 @@ async function searchEbayMatches() {
       payload: {
         query,
         ...sourceInput,
+        sellerStandingBoost: sellerStandingBoostInput.checked,
+        sourceListing: activeSourceListing,
         sourcePlatform: 'facebook',
       },
     });
@@ -257,28 +273,27 @@ async function searchEbayMatches() {
 async function applyFilters() {
   const saved = await getSavedFilters();
   const { settings } = await chrome.storage.local.get(['settings']);
-  currentSettings = settings || {};
+  const effectiveSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  currentSettings = effectiveSettings;
 
   const filters = {
     ...FILTER_DEFAULTS,
-    ...(settings ? {
-      minPositiveRatings: settings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings,
-      maxNegativeRatioDivisor: settings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor,
-      defaultTaxRate: settings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate,
-      userState: settings.defaultState ?? FILTER_DEFAULTS.userState,
-    } : {}),
+    minPositiveRatings: effectiveSettings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings,
+    maxNegativeRatioDivisor: effectiveSettings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor,
+    defaultTaxRate: effectiveSettings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate,
+    userState: effectiveSettings.defaultState ?? FILTER_DEFAULTS.userState,
     ...saved,
     distanceScope: distanceScopeInput.value,
     brandRequired: brandRequiredInput.checked,
     brand: brandInput.value.trim(),
     freeShippingOnly: freeShippingOnlyInput.checked,
     sellerStandingBoost: sellerStandingBoostInput.checked,
-    userState: userStateInput.value.trim() || settings?.defaultState || '',
+    userState: userStateInput.value.trim() || effectiveSettings.defaultState || '',
   };
 
   await chrome.storage.local.set({ filters });
   await persistDraft();
-  renderStatusPills(filters, await getSavedConsent(), settings);
+  renderStatusPills(filters, await getSavedConsent(), effectiveSettings);
   render({ message: 'Saved Facebook-to-eBay comparison filters.' });
 }
 
@@ -312,7 +327,6 @@ async function saveConsent(allowed) {
     cookiesPrompted: true,
     cookiesAllowed: allowed,
     historyAllowed: allowed,
-    couponLookupAllowed: false,
   };
 
   await chrome.storage.local.set({ consent });
@@ -353,11 +367,11 @@ function renderResultsMeta(queryAttempts = [], selectedQuery = '', matchCount = 
     return;
   }
 
-  const successfulAttempt = queryAttempts.find((attempt) => Number(attempt.returned || 0) > 0);
-  const attemptLabel = queryAttempts.length === 1 ? '1 query attempt' : `${queryAttempts.length} query attempts`;
-  const usedQuery = successfulAttempt?.query || selectedQuery || queryAttempts[0]?.query || '';
-  const countLabel = matchCount == null ? '' : ` · ${matchCount} deduped matches`;
-  resultsMetaNode.textContent = `${attemptLabel}${countLabel}${usedQuery ? ` · using: ${usedQuery}` : ''}`;
+  const attemptLabel = queryAttempts.length === 1 ? '1 search variant tried' : `${queryAttempts.length} search variants tried`;
+  const usedQuery = selectedQuery || queryAttempts[0]?.query || '';
+  const countLabel = matchCount == null ? '' : ` · ${matchCount} matches after dedupe`;
+  const queryLabel = queryAttempts.length > 1 ? 'best search variant' : 'query';
+  resultsMetaNode.textContent = `${attemptLabel}${countLabel}${usedQuery ? ` · ${queryLabel}: ${usedQuery}` : ''}`;
 }
 
 function renderResultsSummary(results = []) {
@@ -379,23 +393,29 @@ function renderResultsSummary(results = []) {
     const highlights = Array.isArray(comparisonSummary.highlights) ? comparisonSummary.highlights : [];
     const mismatches = Array.isArray(comparisonSummary.mismatches) ? comparisonSummary.mismatches : [];
     const priceDelta = formatPriceDelta(comparisonSummary.priceDelta);
+    const queryVariantLabel = describeQueryVariantHits(result.queryVariantHits);
+    const confidenceLabel = `${Number(result.matchConfidence || 0).toFixed(0)} confidence`;
     return `
-      <div class="matchCard">
+      <div class="matchCard${index === 0 ? ' featured' : ''}">
         <div class="matchHeader">
-          <div>
+          <div class="matchTitle">
             <strong>${escapeHtml(result.title || 'Untitled eBay match')}</strong>
             <div class="miniMeta">${escapeHtml(result.matchReason || result.condition || 'eBay Browse API match')}</div>
           </div>
           <div class="priceBlock">
-            ${index === 0 ? '<div class="flag">Best Comparable</div>' : ''}
-            <div class="miniMeta">Landed</div>
+            ${index === 0 ? '<div class="flag featured">Best Comparable</div>' : ''}
+            <div class="metricLabel">Landed cost</div>
             <strong>$${Number(result.totalCost || 0).toFixed(2)}</strong>
           </div>
         </div>
-        <div class="miniMeta">Confidence ${Number(result.matchConfidence || 0).toFixed(0)}${result.matchedTokens?.length ? ` · ${escapeHtml(result.matchedTokens.join(', '))}` : ''}</div>
+        <div class="resultSummaryLine">
+          <span class="summaryChip"><strong>${escapeHtml(confidenceLabel)}</strong></span>
+          ${queryVariantLabel ? `<span class="summaryChip alt">${escapeHtml(queryVariantLabel)}</span>` : ''}
+          ${result.matchedTokens?.length ? `<span class="summaryChip alt">${escapeHtml(result.matchedTokens.join(', '))}</span>` : ''}
+        </div>
         <div class="metricGrid">
           <div class="metric">
-            <div class="metricLabel">Price</div>
+            <div class="metricLabel">Item price</div>
             <div class="metricValue">$${Number(result.listedPrice || 0).toFixed(2)}</div>
           </div>
           <div class="metric">
@@ -409,10 +429,9 @@ function renderResultsSummary(results = []) {
         </div>
         ${priceDelta ? `<div class="miniMeta">${escapeHtml(priceDelta)}</div>` : ''}
         ${highlights.length ? `<div class="flagRow">${highlights.map((item) => `<span class="flag">${escapeHtml(item)}</span>`).join('')}</div>` : ''}
-        ${mismatches.length ? `<div class="miniMeta">Watchouts: ${escapeHtml(mismatches.join(' · '))}</div>` : ''}
+        ${mismatches.length ? `<div class="watchoutBox"><div class="miniMeta"><strong>Watchouts:</strong> ${escapeHtml(mismatches.join(' · '))}</div></div>` : ''}
+        <div class="miniMeta">Seller ${escapeHtml(result.sellerName || 'unknown')} ${result.sellerStanding ? `· ${escapeHtml(result.sellerStanding)}` : ''}${result.locationText ? ` · ${escapeHtml(result.locationText)}` : ''}${Array.isArray(result.buyingOptions) && result.buyingOptions.length ? ` · ${escapeHtml(result.buyingOptions.join(', '))}` : ''}</div>
         <div class="miniMeta">Item $${Number(result.listedPrice || 0).toFixed(2)} · Shipping ${formatCurrencyOrUnknown(result.shipping)} · Tax $${Number(result.taxes || 0).toFixed(2)}</div>
-        <div class="miniMeta">Seller ${escapeHtml(result.sellerName || 'unknown')} ${result.sellerStanding ? `· ${escapeHtml(result.sellerStanding)}` : ''}</div>
-        <div class="miniMeta">${escapeHtml(result.locationText || 'Location unavailable')}${Array.isArray(result.buyingOptions) && result.buyingOptions.length ? ` · ${escapeHtml(result.buyingOptions.join(', '))}` : ''}</div>
         ${flags.length ? `<div class="flagRow">${flags.map((flag) => `<span class="flag">${escapeHtml(flag)}</span>`).join('')}</div>` : ''}
         <div class="actionRow">
           <a class="actionLink" href="${escapeHtml(result.url || searchUrl)}" target="_blank" rel="noreferrer">Open Listing</a>
@@ -484,12 +503,10 @@ function restoreDraft(draft = {}) {
 function restoreFilters(filters = {}, settings = {}) {
   const merged = {
     ...FILTER_DEFAULTS,
-    ...(settings ? {
-      minPositiveRatings: settings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings,
-      maxNegativeRatioDivisor: settings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor,
-      defaultTaxRate: settings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate,
-      userState: settings.defaultState ?? FILTER_DEFAULTS.userState,
-    } : {}),
+    minPositiveRatings: settings.minPositiveRatings ?? FILTER_DEFAULTS.minPositiveRatings,
+    maxNegativeRatioDivisor: settings.maxNegativeRatioDivisor ?? FILTER_DEFAULTS.maxNegativeRatioDivisor,
+    defaultTaxRate: settings.defaultTaxRate ?? FILTER_DEFAULTS.defaultTaxRate,
+    userState: settings.defaultState ?? FILTER_DEFAULTS.userState,
     ...(filters || {}),
   };
 
@@ -792,8 +809,15 @@ function buildFlags(result) {
   if (Number(result.shipping) === 0) flags.push('Free Shipping');
   if (result.shipping == null) flags.push('Shipping Unknown');
   if (result.sellerStanding) flags.push('Seller Signal');
+  if (Array.isArray(result.variantMismatchSignals) && result.variantMismatchSignals.length) flags.push('Possible Variant Mismatch');
   if (result.locationText) flags.push(result.locationText);
   return flags;
+}
+
+function describeQueryVariantHits(queryVariantHits) {
+  const hits = Number(queryVariantHits || 0);
+  if (hits > 1) return 'Matched multiple search variants';
+  return '';
 }
 
 function formatPriceDelta(value) {

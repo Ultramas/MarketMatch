@@ -34,9 +34,14 @@
 
   lib.computeRankingBoosts = function computeRankingBoosts(result, { sellerStandingBoost = true, couponSavings = 0, comparisonSummary = null } = {}) {
     let boost = 0;
+    const queryVariantHits = Number(result?.queryVariantHits || 0);
 
     if (sellerStandingBoost && result?.sellerStanding) {
       boost += 10;
+    }
+
+    if (queryVariantHits > 1) {
+      boost += Math.min(10, (queryVariantHits - 1) * 4);
     }
 
     if (comparisonSummary) {

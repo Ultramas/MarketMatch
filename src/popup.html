@@ -29,19 +29,32 @@
       .miniItem { padding: 9px 10px; border-radius: 10px; background: #0b1220; border: 1px solid rgba(148,163,184,.12); }
       .miniItem strong { display: block; font-size: 12px; }
       .miniMeta { font-size: 11px; color: #8fa7cf; margin-top: 3px; }
-      .matchCard { padding: 10px; border-radius: 12px; background: #0b1220; border: 1px solid rgba(148,163,184,.12); display: grid; gap: 6px; }
+      .matchCard { padding: 11px; border-radius: 12px; background: #0b1220; border: 1px solid rgba(148,163,184,.12); display: grid; gap: 8px; }
+      .matchCard.featured { border-color: rgba(96,165,250,.34); box-shadow: 0 12px 28px rgba(2,6,23,.28); background: linear-gradient(180deg, rgba(15,23,42,.96) 0%, rgba(11,18,32,1) 74%); }
       .matchHeader { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
-      .priceBlock { text-align: right; }
-      .priceBlock strong { font-size: 14px; }
+      .matchTitle { display: grid; gap: 4px; min-width: 0; }
+      .matchTitle strong { display: block; font-size: 13px; line-height: 1.25; }
+      .matchTitle .miniMeta { margin-top: 0; }
+      .priceBlock { text-align: right; min-width: 88px; }
+      .priceBlock strong { font-size: 18px; line-height: 1; }
+      .priceBlock .metricLabel { color: #c7d7f8; }
+      .priceBlock .metricLabel, .priceBlock .miniMeta { margin-top: 3px; }
       .metricGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
       .metric { background: rgba(148,163,184,.08); border: 1px solid rgba(148,163,184,.12); border-radius: 10px; padding: 8px; }
       .metricLabel { font-size: 10px; color: #8fa7cf; text-transform: uppercase; letter-spacing: .06em; }
       .metricValue { font-size: 12px; font-weight: 700; color: #f8fbff; margin-top: 4px; }
+      .resultSummaryLine { display: flex; flex-wrap: wrap; gap: 6px; }
+      .summaryChip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 8px; font-size: 11px; background: rgba(37,99,235,.14); color: #dbeafe; border: 1px solid rgba(96,165,250,.2); }
+      .summaryChip.alt { background: rgba(148,163,184,.08); color: #c7d7f8; border-color: rgba(148,163,184,.16); }
+      .summaryChip strong { font-weight: 700; }
+      .watchoutBox { border-radius: 10px; border: 1px solid rgba(248,113,113,.18); background: rgba(127,29,29,.16); padding: 8px 9px; }
+      .watchoutBox .miniMeta { color: #fecaca; margin-top: 0; }
       .actionRow { display: flex; gap: 8px; }
       .actionLink { flex: 1; text-align: center; text-decoration: none; background: #1d4ed8; color: white; border-radius: 10px; padding: 8px 10px; font-size: 12px; font-weight: 600; }
       .actionLink.secondary { background: #172033; border: 1px solid rgba(148,163,184,.2); color: #dbeafe; }
       .flagRow { display: flex; flex-wrap: wrap; gap: 6px; }
       .flag { font-size: 10px; padding: 4px 8px; border-radius: 999px; background: rgba(14,165,233,.12); color: #bae6fd; border: 1px solid rgba(125,211,252,.18); }
+      .flag.featured { background: rgba(59,130,246,.2); color: #eff6ff; border-color: rgba(147,197,253,.28); }
       #consentCard { display: none; }
       #results { white-space: pre-wrap; font-size: 12px; background: #0b1220; padding: 8px; border-radius: 10px; max-height: 180px; overflow: auto; }
     </style>

@@ -1,4 +1,6 @@
 (function registerEbayAdapter(globalScope) {
+  // Inactive scaffold only: this adapter is not loaded by manifest.json and is
+  // not part of the current Facebook source -> eBay Browse API comparison flow.
   globalScope.MarketMatchAdapters?.registerAdapter('ebay', function getEbayAdapter() {
     return {
       platform: 'ebay',

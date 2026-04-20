@@ -147,7 +147,7 @@ Build a Firefox-first, frontend-only browser extension that captures a Facebook 
 - Public Marketplace pages and login-gated pages expose different DOM shapes and overlays.
 - Seller-threshold logic is only partially meaningful until richer negative/quality signals are available from eBay mappings.
 - Tax handling is still mostly default-rate/state-text based rather than a fuller jurisdiction model.
-- Extra adapters/stubs (`src/adapters/ebay.js`, `src/adapters/craigslist.js`, `src/lib/coupons.js`) are not part of the active Facebook -> eBay runtime path yet.
+- Extra adapters/stubs (`src/adapters/ebay.js`, `src/adapters/craigslist.js`) remain inactive scaffolds and are not part of the active Facebook -> eBay runtime path.
 
 ## Suggested Build Order
 1. Facebook listing extractor tuning against more live Marketplace variants
