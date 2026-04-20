@@ -8,16 +8,30 @@ Firefox-first, frontend-only browser extension for capturing a Facebook Marketpl
 - No backend is involved.
 - Users paste an eBay application token into the Options page.
 
-## Current capabilities
-- Capture a Facebook Marketplace listing from the active page, including price, location, condition, and seller details when available
+## Features
+
+### Facebook Marketplace capture
+- Capture the active Facebook Marketplace listing with title, description, price, condition, seller, and location when available
+- Preserve partial captures with notes so missing fields can be completed manually in the popup
+- Flag placeholder prices like `Free` or `$1` and detect offer language from the listing text
+- Prefer listing-scoped Facebook signals before broad page fallbacks for cleaner source extraction
+
+### Smarter eBay search planning
 - Require both title and description before searching
-- Preserve partial captures with notes so missing fields can be completed manually
-- Build a normalized search query from the captured listing
-- Search eBay Browse API from the background worker
-- Enrich stronger matches with item detail requests
-- Rank results with price, shipping, tax, seller, and lightweight confidence signals
+- Build normalized query variants that preserve brand and likely model identifiers
+- Search the eBay Browse API from the background worker with a fixed-price-first strategy by default
+- Enrich stronger matches with follow-up item detail requests for better comparison signals
+
+### Ranking, filtering, and comparison
+- Rank results with effective price, shipping, tax, seller standing, and match-confidence signals
+- Compare source and result condition, location, offer language, and price bands
+- Detect likely variant mismatches and downgrade clearly worse or suspicious matches
+- Hide auction-only results by default, with popup filters for auctions, worse-condition items, and likely mismatches
+
+### State and privacy
 - Clear stale eBay results when the source listing or draft changes
 - Persist settings, filters, drafts, source listing state, and consent-gated history in extension storage
+- Keep the runtime frontend-only, with the user pasting an eBay application token into Options
 
 ## Runtime flow
 1. Open a Facebook Marketplace listing in Firefox.
@@ -67,3 +81,10 @@ manifest.json            Firefox extension manifest
 - Improve Facebook Marketplace extraction quality
 - Improve eBay result quality and filtering
 - Continue Firefox-targeted validation and polish
+
+## Developer todo
+- Add repeatable fixture-based tests for Facebook capture, normalization, ranking, and popup filtering behavior
+- Validate more Facebook Marketplace DOM variants across public, login-gated, and mobile-ish layouts
+- Improve distance and seller-quality heuristics beyond current state/country and feedback-based signals
+- Expand tax and shipping interpretation so landed-cost comparisons rely less on defaults
+- Decide whether inactive adapter scaffolds should be removed or fully implemented
