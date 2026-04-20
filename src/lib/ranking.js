@@ -277,10 +277,13 @@
       return { value: 'unknown', label: '', isMismatch: false };
     }
 
-    if (source.city && result.city && source.city === result.city && (!source.state || !result.state || source.state === result.state)) {
+    const hasCompatibleCountry = (!source.country && !result.country)
+      || (source.country && result.country && source.country === result.country);
+
+    if (hasCompatibleCountry && source.city && result.city && source.city === result.city && (!source.state || !result.state || source.state === result.state)) {
       return { value: 'same-city', label: 'Location is close to source', isMismatch: false };
     }
-    if (source.state && result.state && source.state === result.state) {
+    if (hasCompatibleCountry && source.state && result.state && source.state === result.state) {
       return { value: 'same-state', label: 'Same state as source', isMismatch: false };
     }
     if (source.country && result.country && source.country === result.country) {
@@ -322,8 +325,8 @@
     if (/fair|acceptable/.test(text)) return { rank: 2, bucket: 'fair' };
     if (/used - good|very good|good/.test(text)) return { rank: 3, bucket: 'good' };
     if (/used - like new|like new|open box|open-box|excellent/.test(text)) return { rank: 4, bucket: 'like-new' };
-    if (/brand new|new in box|new/.test(text)) return { rank: 5, bucket: 'new' };
     if (/refurbished|renewed/.test(text)) return { rank: 3, bucket: 'refurbished' };
+    if (/\b(brand new|new in box|new)\b/.test(text)) return { rank: 5, bucket: 'new' };
     if (/used/.test(text)) return { rank: 3, bucket: 'used' };
     return { rank: 0, bucket: 'unknown' };
   }

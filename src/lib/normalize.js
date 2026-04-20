@@ -11,7 +11,7 @@
     'case', 'cover', 'shell', 'box', 'manual', 'remote', 'headboard', 'parts', 'broken'
   ]);
 
-  const STATE_ALIASES = new Map(Object.entries({
+  const STATE_ALIASES = createAliasMap({
     alabama: 'al', alaska: 'ak', arizona: 'az', arkansas: 'ar', california: 'ca', colorado: 'co',
     connecticut: 'ct', delaware: 'de', florida: 'fl', georgia: 'ga', hawaii: 'hi', idaho: 'id',
     illinois: 'il', indiana: 'in', iowa: 'ia', kansas: 'ks', kentucky: 'ky', louisiana: 'la',
@@ -26,33 +26,62 @@
     mi: 'mi', mn: 'mn', ms: 'ms', mo: 'mo', mt: 'mt', ne: 'ne', nv: 'nv', nh: 'nh', nj: 'nj', nm: 'nm', ny: 'ny',
     nc: 'nc', nd: 'nd', oh: 'oh', ok: 'ok', or: 'or', pa: 'pa', ri: 'ri', sc: 'sc', sd: 'sd', tn: 'tn', tx: 'tx',
     ut: 'ut', vt: 'vt', va: 'va', wa: 'wa', wv: 'wv', wi: 'wi', wy: 'wy'
-  }));
+  });
 
-  const COUNTRY_ALIASES = new Map(Object.entries({
-    usa: 'us', us: 'us', 'u s a': 'us', 'united states': 'us', 'united states of america': 'us',
-    canada: 'ca', mexico: 'mx', mx: 'mx'
-  }));
+  const COUNTRY_ALIASES = createAliasMap({
+    usa: 'us', us: 'us', 'united states': 'us', 'united states of america': 'us', america: 'us',
+    canada: 'ca', can: 'ca',
+    mexico: 'mx', mx: 'mx', mex: 'mx',
+    'united kingdom': 'gb', uk: 'gb', gb: 'gb', gbr: 'gb', britain: 'gb', 'great britain': 'gb', england: 'gb',
+    germany: 'de', deu: 'de', deutschland: 'de',
+    france: 'fr', fr: 'fr', fra: 'fr',
+    china: 'cn', cn: 'cn', chn: 'cn', prc: 'cn',
+    india: 'in', ind: 'in', bharat: 'in',
+    australia: 'au', au: 'au', aus: 'au',
+    japan: 'jp', jp: 'jp', jpn: 'jp',
+    'south korea': 'kr', korea: 'kr', kr: 'kr', kor: 'kr',
+    singapore: 'sg', sg: 'sg', sgp: 'sg',
+    brazil: 'br', br: 'br', bra: 'br',
+    'new zealand': 'nz', nz: 'nz', nzl: 'nz',
+    netherlands: 'nl', holland: 'nl', nld: 'nl',
+    spain: 'es', esp: 'es',
+    italy: 'it', ita: 'it',
+    ireland: 'ie', irl: 'ie',
+    sweden: 'se', swe: 'se',
+    norway: 'no', nor: 'no',
+    denmark: 'dk', dnk: 'dk',
+    switzerland: 'ch', che: 'ch',
+    belgium: 'be', bel: 'be',
+    austria: 'at', aut: 'at',
+    portugal: 'pt', prt: 'pt',
+    poland: 'pl', pol: 'pl',
+    'south africa': 'za', za: 'za', zaf: 'za',
+    'united arab emirates': 'ae', uae: 'ae', ae: 'ae', are: 'ae'
+  });
 
   lib.buildQuery = function buildQuery({ brand, title, description }) {
     return lib.normalizeSearchInput({ brand, title, description }).query;
   };
 
   lib.normalizeLocationText = function normalizeLocationText(locationText, { fallbackState = '', fallbackCountry = '' } = {}) {
-    const cleaned = cleanFragment(String(locationText || '').toLowerCase())
+    const rawLocation = String(locationText || '').toLowerCase()
       .replace(/\b(local pickup|pickup only|pick up only|ships to you|shipping available|delivery available|meetup|meet up|meet in|nearby)\b/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
-    if (!cleaned) {
+    if (!rawLocation) {
       const state = normalizeStateToken(fallbackState);
       const country = normalizeCountryToken(fallbackCountry);
       return { raw: '', city: '', state, country, hasSignal: Boolean(state || country) };
     }
 
-    const parts = cleaned
+    const parts = rawLocation
       .split(/[•|,]/)
       .map((part) => normalizeLocationPart(part))
       .filter(Boolean);
+    const cleaned = cleanFragment(rawLocation)
+      .replace(/\s+/g, ' ')
+      .trim();
     const state = readStateFromParts(parts) || normalizeStateToken(fallbackState);
     const country = readCountryFromParts(parts) || normalizeCountryToken(fallbackCountry);
     const city = readCityFromParts(parts);
@@ -222,13 +251,24 @@
   }
 
   function normalizeStateToken(value) {
-    const cleaned = normalizeLocationPart(value).replace(/\./g, '');
+    const cleaned = normalizeAliasKey(normalizeLocationPart(value));
     return STATE_ALIASES.get(cleaned) || '';
   }
 
   function normalizeCountryToken(value) {
-    const cleaned = normalizeLocationPart(value).replace(/\./g, '');
+    const cleaned = normalizeAliasKey(normalizeLocationPart(value));
     return COUNTRY_ALIASES.get(cleaned) || '';
+  }
+
+  function createAliasMap(entries) {
+    return new Map(Object.entries(entries).map(([key, normalized]) => [normalizeAliasKey(key), normalized]));
+  }
+
+  function normalizeAliasKey(value) {
+    return String(value || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]/g, '');
   }
 
   function tokenize(value) {
