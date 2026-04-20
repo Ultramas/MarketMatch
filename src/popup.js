@@ -392,7 +392,7 @@ function renderResultsSummary(results = []) {
     const comparisonSummary = result.comparisonSummary || {};
     const highlights = Array.isArray(comparisonSummary.highlights) ? comparisonSummary.highlights : [];
     const mismatches = Array.isArray(comparisonSummary.mismatches) ? comparisonSummary.mismatches : [];
-    const priceDelta = formatPriceDelta(comparisonSummary.priceDelta);
+    const priceDelta = formatPriceDelta(comparisonSummary.priceDelta, comparisonSummary.sourcePriceConfidence);
     const queryVariantLabel = describeQueryVariantHits(result.queryVariantHits);
     const confidenceLabel = `${Number(result.matchConfidence || 0).toFixed(0)} confidence`;
     return `
@@ -805,11 +805,13 @@ function passesDistanceFilter(result, sourceListing) {
 
 function buildFlags(result) {
   const flags = [];
+  const priceBandComparison = result?.comparisonSummary?.priceBandComparison;
   if (result.bestOfferDetected) flags.push('Best Offer');
   if (Number(result.shipping) === 0) flags.push('Free Shipping');
   if (result.shipping == null) flags.push('Shipping Unknown');
   if (result.sellerStanding) flags.push('Seller Signal');
   if (Array.isArray(result.variantMismatchSignals) && result.variantMismatchSignals.length) flags.push('Possible Variant Mismatch');
+  if (priceBandComparison === 'far-below' || priceBandComparison === 'far-above') flags.push('Price Watchout');
   if (result.locationText) flags.push(result.locationText);
   return flags;
 }
@@ -820,12 +822,13 @@ function describeQueryVariantHits(queryVariantHits) {
   return '';
 }
 
-function formatPriceDelta(value) {
+function formatPriceDelta(value, sourcePriceConfidence = 'strong') {
   if (value == null || !Number.isFinite(Number(value))) return '';
   const delta = Number(value);
-  if (delta === 0) return 'Total cost is about even with the source listing';
-  if (delta < 0) return `Total cost is about $${Math.abs(delta).toFixed(2)} below the source listing`;
-  return `Total cost is about $${delta.toFixed(2)} above the source listing`;
+  const reference = sourcePriceConfidence === 'weak' ? 'source price hint' : 'source listing';
+  if (delta === 0) return `Total cost is about even with the ${reference}`;
+  if (delta < 0) return `Total cost is about $${Math.abs(delta).toFixed(2)} below the ${reference}`;
+  return `Total cost is about $${delta.toFixed(2)} above the ${reference}`;
 }
 
 function formatHistoryEntry(entry) {

@@ -4,6 +4,7 @@
   lib.buildComparableResult = function buildComparableResult(result, options = {}) {
     const sourceListing = options.sourceListing || {};
     const effectivePrice = Number(result.descriptionPriceHint || result.listedPrice || 0);
+    const sourcePriceContext = readSourcePriceContext(sourceListing, lib);
     const confidence = typeof lib.computeMatchConfidence === 'function'
       ? lib.computeMatchConfidence(sourceListing, result)
       : { score: 0, matchedTokens: [] };
@@ -19,8 +20,9 @@
       effectivePrice,
       taxes,
       totalCost,
-    });
+    }, sourcePriceContext);
     const variantMismatchPenalty = Number(confidence.variantMismatchPenalty || 0);
+    const priceBandPenalty = Number(comparisonSummary.priceBandPenalty || 0);
     const summarizedComparison = appendVariantMismatchSummary(comparisonSummary, confidence.variantMismatches);
     const rankingBoost = lib.computeRankingBoosts(result, {
       ...options,
@@ -36,9 +38,12 @@
       matchedTokens: confidence.matchedTokens,
       variantMismatchSignals: confidence.variantMismatches || [],
       variantMismatchPenalty,
+      priceBandPenalty,
+      sourcePriceConfidence: sourcePriceContext.confidence,
+      sourcePriceBasis: sourcePriceContext.basis,
       comparisonSummary: summarizedComparison,
       rankingBoost,
-      adjustedRankScore: totalCost - rankingBoost - (confidence.score * 0.12) + (variantMismatchPenalty * 0.4),
+      adjustedRankScore: totalCost - rankingBoost - (confidence.score * 0.12) + (variantMismatchPenalty * 0.4) + priceBandPenalty,
     };
   };
 
@@ -48,10 +53,12 @@
       .sort((a, b) => a.adjustedRankScore - b.adjustedRankScore);
   };
 
-  function buildComparisonSummary(source, result) {
-    const sourcePrice = readSourcePrice(source);
+  function buildComparisonSummary(source, result, sourcePriceContext = readSourcePriceContext(source, lib)) {
+    const sourcePrice = sourcePriceContext.value;
     const totalCost = Number(result.totalCost || 0);
     const priceDelta = sourcePrice == null ? null : roundCurrency(totalCost - sourcePrice);
+    const priceBandComparison = comparePriceBand(sourcePriceContext, totalCost, priceDelta);
+    const sourcePriceReference = sourcePriceContext.confidence === 'weak' ? 'source price hint' : 'source';
     const conditionComparison = compareCondition(source?.condition, result?.condition);
     const locationComparison = compareLocation(source?.locationText, result?.locationText);
     const offerComparison = compareOfferSignal(source?.bestOfferDetected, result?.bestOfferDetected);
@@ -60,11 +67,17 @@
     const mismatches = [];
 
     if (priceDelta != null) {
-      if (priceDelta <= -25) reasons.push(`About $${Math.abs(priceDelta).toFixed(2)} cheaper than source`);
-      else if (priceDelta < 0) reasons.push(`Slightly cheaper than source`);
-      else if (priceDelta >= 100) mismatches.push(`About $${priceDelta.toFixed(2)} above source`);
-      else if (priceDelta > 0) mismatches.push(`Priced above source`);
+      if (priceBandComparison.value === 'far-below' || priceBandComparison.value === 'far-above') {
+        // Let the explicit price-band watchout carry the message instead.
+      } else if (priceDelta <= -25) reasons.push(`About $${Math.abs(priceDelta).toFixed(2)} cheaper than ${sourcePriceReference}`);
+      else if (priceDelta < 0) reasons.push(`Slightly cheaper than ${sourcePriceReference}`);
+      else if (priceDelta >= 100) mismatches.push(`About $${priceDelta.toFixed(2)} above ${sourcePriceReference}`);
+      else if (priceDelta > 0) mismatches.push(`Priced above ${sourcePriceReference}`);
       else reasons.push('Price roughly matches source');
+    }
+
+    if (priceBandComparison.label) {
+      (priceBandComparison.isMismatch ? mismatches : reasons).push(priceBandComparison.label);
     }
 
     if (conditionComparison.label) {
@@ -85,7 +98,11 @@
 
     return {
       sourcePrice,
+      sourcePriceConfidence: sourcePriceContext.confidence,
+      sourcePriceBasis: sourcePriceContext.basis,
       priceDelta,
+      priceBandComparison: priceBandComparison.value,
+      priceBandPenalty: priceBandComparison.penalty,
       conditionComparison: conditionComparison.value,
       locationComparison: locationComparison.value,
       offerComparison: offerComparison.value,
@@ -111,11 +128,99 @@
     };
   }
 
-  function readSourcePrice(source) {
+  function readSourcePriceContext(source, sharedLib) {
+    const listed = readFinitePositive(source?.listedPrice);
     const hinted = Number(source?.descriptionPriceHint);
-    if (Number.isFinite(hinted) && hinted > 0) return hinted;
-    const listed = Number(source?.listedPrice);
-    return Number.isFinite(listed) && listed > 0 ? listed : null;
+    const hint = Number.isFinite(hinted) && hinted > 0 ? hinted : null;
+    const placeholderPrice = Boolean(source?.placeholderPriceFlag)
+      || (typeof sharedLib?.isFacebookPlaceholderPrice === 'function' && sharedLib.isFacebookPlaceholderPrice(source || {}));
+
+    if (placeholderPrice) {
+      if (hint != null && hint >= 10) {
+        return { value: hint, confidence: 'weak', basis: 'description-hint-placeholder' };
+      }
+
+      return { value: null, confidence: 'placeholder', basis: 'placeholder' };
+    }
+
+    if (listed != null) {
+      return {
+        value: listed,
+        confidence: 'strong',
+        basis: isCompatiblePriceHint(listed, hint) ? 'listed-price' : 'listed-price-only',
+      };
+    }
+
+    if (hint != null && hint >= 10) {
+      return {
+        value: hint,
+        confidence: 'weak',
+        basis: 'description-hint',
+      };
+    }
+
+    return { value: null, confidence: 'none', basis: 'missing' };
+  }
+
+  function comparePriceBand(sourcePriceContext, totalCost, priceDelta) {
+    const sourcePrice = Number(sourcePriceContext?.value || 0);
+    const cost = Number(totalCost || 0);
+    if (!sourcePrice || !cost || priceDelta == null) {
+      return { value: 'unknown', label: '', isMismatch: false, penalty: 0 };
+    }
+
+    const ratio = cost / sourcePrice;
+    const absoluteGap = Math.abs(Number(priceDelta || 0));
+    const isWeakSourcePrice = sourcePriceContext?.confidence === 'weak';
+
+    if (!isWeakSourcePrice && priceDelta <= -250 && ratio <= 0.45) {
+      return {
+        value: 'far-below',
+        label: 'Much lower than source price; check for accessory or bundle differences',
+        isMismatch: true,
+        penalty: roundCurrency(Math.min(180, absoluteGap * 0.3)),
+      };
+    }
+
+    if (isWeakSourcePrice && priceDelta <= -400 && ratio <= 0.3) {
+      return {
+        value: 'far-below',
+        label: 'Much lower than the source price hint; double-check the match',
+        isMismatch: true,
+        penalty: roundCurrency(Math.min(90, absoluteGap * 0.18)),
+      };
+    }
+
+    if (!isWeakSourcePrice && priceDelta >= 250 && ratio >= 1.9) {
+      return {
+        value: 'far-above',
+        label: 'Much higher than source price',
+        isMismatch: true,
+        penalty: roundCurrency(Math.min(140, absoluteGap * 0.15)),
+      };
+    }
+
+    if (isWeakSourcePrice && priceDelta >= 400 && ratio >= 2.5) {
+      return {
+        value: 'far-above',
+        label: 'Much higher than the source price hint',
+        isMismatch: true,
+        penalty: roundCurrency(Math.min(100, absoluteGap * 0.12)),
+      };
+    }
+
+    return { value: 'within-band', label: '', isMismatch: false, penalty: 0 };
+  }
+
+  function isCompatiblePriceHint(listedPrice, hintedPrice) {
+    if (listedPrice == null || hintedPrice == null) return false;
+    const delta = Math.abs(Number(listedPrice) - Number(hintedPrice));
+    return delta <= Math.max(40, Number(listedPrice) * 0.35);
+  }
+
+  function readFinitePositive(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : null;
   }
 
   function compareCondition(sourceCondition, resultCondition) {
